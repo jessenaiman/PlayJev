@@ -7,29 +7,52 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-def eligible(directory, row):
-    if row.get("status") != "complete" or row.get("game_frames") != row.get("budget_frames") or not row.get("score_verified"):
+def score_supported(directory, row):
+    """Evidence validity is independent of whether an attempt can be ranked."""
+    if not row.get("score_verified"):
         return False
     score = row.get("score")
     if isinstance(score,bool) or not isinstance(score,int) or score<0:
         return False
     review = row.get("score_review",{})
-    file = (directory/review.get("evidence", "final.png")).resolve()
-    return file.is_relative_to(directory.resolve()) and file.is_file() and hashlib.sha256(file.read_bytes()).hexdigest()==review.get("evidence_sha256")
+    if not isinstance(review,dict):return False
+    try:
+        file = (directory/review.get("evidence", "final.png")).resolve()
+        return file.is_relative_to(directory.resolve()) and file.is_file() and hashlib.sha256(file.read_bytes()).hexdigest()==review.get("evidence_sha256")
+    except (OSError,TypeError,ValueError):return False
 
 
-def build(runs, output):
-    output.mkdir(parents=True,exist_ok=True)
+def eligible(directory, row):
+    return (row.get("status") == "complete" and row.get("budget_frames") is not None
+            and row.get("game_frames") == row.get("budget_frames") and score_supported(directory,row))
+
+
+def load_groups(runs,errors=None):
+    """One grouping/evidence contract for the static board and live front page."""
     groups = {}
     seen = set()
     for directory in sorted(Path(p).resolve() for p in runs):
         if directory in seen:
             continue
         seen.add(directory)
-        row = json.loads((directory/"summary.json").read_text())
-        key = (row["game"],row["challenge_id"],row.get("playback_mode","paused-inference-benchmark"))
-        item = {**row,"run":str(directory),"eligible":eligible(directory,row)}
+        try:
+            row = json.loads((directory/"summary.json").read_text())
+            key = (row["game"],row["challenge_id"],row.get("playback_mode","paused-inference-benchmark"))
+            if not all(isinstance(k,str) for k in key) or not isinstance(row.get('config'),dict) or not isinstance(row.get('game_frames'),(int,float)) or 'status' not in row:
+                raise ValueError('Invalid score summary fields')
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            if errors is not None:errors.append({'run':directory.name,'error':type(exc).__name__})
+            continue
+        item = {**row,"run":str(directory),"eligible":eligible(directory,row),"score_supported":score_supported(directory,row)}
         groups.setdefault(key,[]).append(item)
+    for rows in groups.values():
+        rows.sort(key=lambda r:(not r['eligible'],-(r['score'] or 0) if r['score_supported'] else 0,r['run']))
+    return groups
+
+
+def build(runs, output):
+    output.mkdir(parents=True,exist_ok=True)
+    groups = load_groups(runs)
     sections, data = [], []
     def link(path,label):
         href = quote(os.path.relpath(path,output.resolve()),safe="/.")
@@ -44,7 +67,7 @@ def build(runs, output):
             path = Path(r["run"])
             if r["eligible"]:
                 rank += 1
-            score = str(r["score"]) if r["eligible"] else f'{r["score"]} (unranked)' if r.get('score_verified') else "Pending review"
+            score = str(r["score"]) if r["eligible"] else f'{r["score"]} (unranked)' if r['score_supported'] else "Pending review"
             stage = "Verified" if r.get("stage_clear_candidate",{}).get("verified") else "—"
             reviewer = r.get("score_review",{}).get("reviewer","human (legacy)") if r.get('score_verified') else r["status"]
             evidence = r.get("score_review",{}).get("evidence","final.png")

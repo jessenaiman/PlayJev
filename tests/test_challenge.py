@@ -147,9 +147,11 @@ class ChallengeTests(unittest.TestCase):
             for i, (complete, verified) in enumerate(((True, True), (True, False), (False, True))):
                 path = Path(tmp) / str(i)
                 path.mkdir()
-                row = dict(challenge_id="same", status="complete" if complete else "incomplete",
+                (path/'final.png').write_bytes(b'evidence')
+                from playjev.challenge import digest
+                row = dict(game='space-invaders',challenge_id="same", status="complete" if complete else "incomplete",
                            game_frames=60, budget_frames=60, score_verified=verified, score=10,
-                           score_candidate=10, config={})
+                           score_candidate=10, config={},score_review={'evidence':'final.png','evidence_sha256':digest(b'evidence')})
                 (path / "summary.json").write_text(json.dumps(row))
                 paths.append(path)
             output = io.StringIO()
@@ -157,6 +159,10 @@ class ChallengeTests(unittest.TestCase):
                 compare(Namespace(runs=paths))
             self.assertEqual(output.getvalue().count("Unranked:"), 2)
             self.assertIn("1. 10", output.getvalue())
+            (paths[0]/'final.png').write_bytes(b'changed')
+            output=io.StringIO()
+            with redirect_stdout(output):compare(Namespace(runs=paths))
+            self.assertNotIn('1. 10',output.getvalue())
 
 
 if __name__ == "__main__":

@@ -66,7 +66,20 @@ def assemble(grids, result, font=FONT):
     return {'value':int(text.strip()) if valid else None,'accepted':valid,'digits':digits,'answers':answers}
 
 
-async def collect(directory):
+def exact_answers(grids,font=FONT):
+    """Literal lookup needs no semantic inference; damaged glyphs stay unknown."""
+    options=request_for(grids,font)['questions']
+    answers={}
+    for i,grid in enumerate(grids):
+        matches=[digit for digit,pattern in font.items() if grid==pattern]
+        selected='blank' if all(set(row)=={'.'} for row in grid) else matches[0] if len(matches)==1 else 'unknown'
+        answers[f'digit_{i}']={'type':'choice','choice':selected,'confidence':1,
+            'probabilities':{k:float(k==selected) for k in options[f'digit_{i}']['criteria']},
+            'source':'deterministic-exact-font-lookup; confidence denotes lookup certainty, not game completion'}
+    return answers
+
+
+async def collect(directory,typed=False):
     from .challenge import JevPlayer, ROOT, digest, replay_html
     from dotenv import load_dotenv
     load_dotenv(ROOT.parent/'.env',override=False)
@@ -79,13 +92,30 @@ async def collect(directory):
     else:
         raise ValueError('HUD layout supports Space Invaders and Crackpots')
     cache, observations = {}, []
-    player = JevPlayer()
-    files = sorted(directory.glob('frame-*.png')) + [directory/'final.png']
+    from .transports import inference
+    provider=summary.get('config',{}).get('provider','ollaya')
+    model,transport=inference(provider,summary.get('config',{}).get('model') if provider=='ollaya' else None)
+    player = JevPlayer(model=model,transport=transport)
+    frames = sorted(directory.glob('frame-*.png'))
+    final=directory/'final.png'
+    # Live final.png is commonly a copy of the last sampled frame. It cannot
+    # supply a second temporal observation of a newly reached score.
+    duplicate_final=bool(frames and final.read_bytes()==frames[-1].read_bytes())
+    files = frames + ([] if duplicate_final else [final])
+    frame_index={}
+    index=directory/'frames.jsonl'
+    if index.is_file():
+        frame_index={r['evidence']:r for r in (json.loads(line) for line in index.read_text().splitlines())}
     all_glyphs = {tuple(g) for file in files for g in extractor(file.read_bytes())}
     blank_glyphs = {g for g in all_glyphs if all(set(row)=={'.'} for row in g)}
     unique = sorted(all_glyphs-blank_glyphs)
     body=request_for([list(g) for g in unique],font)
-    result=await player.request(body) if unique else {'answers':{},'usage':{'input_tokens':0,'output_tokens':0}}
+    body['model']=model
+    if typed and unique:
+        result=await player.request(body)
+    else:
+        result={'answers':exact_answers([list(g) for g in unique],font),
+                'usage':{'input_tokens':0,'output_tokens':0},'transport':'deterministic-exact-font'}
     glyph_answers={g:result['answers'][f'digit_{i}'] for i,g in enumerate(unique)}
     options={**{k:'Digit '+k for k in font},'blank':'Leading space','unknown':'Unknown'}
     for g in blank_glyphs:
@@ -100,39 +130,49 @@ async def collect(directory):
         if key not in cache:
             assembled={'answers':{f'digit_{i}':glyph_answers[tuple(g)] for i,g in enumerate(grids)}}
             cache[key] = {**assemble(grids,assembled,font)}
-        observations.append({'evidence':file.name,'sha256':digest(frame),**cache[key]})
+        provenance=frame_index.get(file.name)
+        if provenance and provenance['sha256']!=digest(frame):
+            raise ValueError('Frame provenance hash mismatch')
+        observations.append({'evidence':file.name,'sha256':digest(frame),'frame_interval':provenance,**cache[key]})
     accepted = [r for r in observations if r['accepted']]
     visible = [r for r in observations if any(d!='blank' for d in r['digits'])]
     # A repeat at the end or adjacent saved frames is required for recording.
+    def independent(a,b):
+        if not a['accepted'] or not b['accepted'] or a['value']!=b['value']:return False
+        p,q=a['frame_interval'],b['frame_interval']
+        if index.is_file():return bool(p and q and (p['after']<q['before'] or q['after']<p['before']))
+        return a['evidence']!=b['evidence']  # legacy separate sampled files
     supported = [r for i,r in enumerate(observations) if r['accepted'] and
-                 ((i>0 and observations[i-1]['value']==r['value']) or
-                  (i+1<len(observations) and observations[i+1]['value']==r['value']))]
+                 ((i>0 and independent(r,observations[i-1])) or
+                  (i+1<len(observations) and independent(r,observations[i+1])))]
     best = max(supported,key=lambda r:r['value'],default=None)
-    report = {'schema':'jev-hud-v1','unique_requests':int(bool(unique)),'unique_glyphs':len(unique),'resolved_blank_glyphs':len(blank_glyphs),'request':body,'response':result,'observations':observations,
+    scorer=provider if typed else 'exact-templates'
+    report = {'schema':'jev-hud-v1','provider':scorer,'model':model if typed else None,'unique_requests':int(typed and bool(unique)),'unique_glyphs':len(unique),'resolved_blank_glyphs':len(blank_glyphs),'request':body if typed else None,'response':result,'observations':observations,
               'accepted_frames':len(accepted),'highest_supported_score':best['value'] if best else None,
-              'visible_hud_frames':len(visible),
-              'note':'Jev digit choices checked against literal glyph templates and repeated HUD evidence. Not human confirmation; not a game-over judgment.'}
+               'visible_hud_frames':len(visible),'duplicate_final_excluded':duplicate_final,
+               'note':'Typed digit choices checked against literal glyph templates and repeated HUD evidence. Not human confirmation; not a game-over judgment.'}
     (directory/'hud-jev.json').write_text(json.dumps(report,indent=2))
     summary['jev_hud'] = {k:v for k,v in report.items() if k not in ('observations','request','response')}
     if best and summary['status'] in ('complete','stopped') and len(accepted)==len(visible):
         if summary.get('score_verified'):
             summary.setdefault('prior_score_reviews',[]).append({'score':summary['score'],'review':summary.get('score_review')})
         summary.update(score=best['value'],score_verified=True,score_review={
-            'method':'jev-digit-choices+exact-pixel-template+temporal-repeat',
-            'reviewer':'jev-pipeline','evidence':best['evidence'],'evidence_sha256':best['sha256'],
+            'method':'typed-digit-choices+exact-pixel-template+temporal-repeat',
+            'reviewer':scorer+'-pipeline','provider':scorer,'model':result.get('model'),'evidence':best['evidence'],'evidence_sha256':best['sha256'],
             'report':'hud-jev.json','note':report['note']})
     (directory/'summary.json').write_text(json.dumps(summary,indent=2))
     records = [json.loads(l) for l in (directory/'decisions.jsonl').read_text().splitlines()]
     replay_html(directory,summary,records)
-    print(f'{directory}: Jev HUD score {report["highest_supported_score"]}; 1 batched request, {len(unique)} glyphs; {len(accepted)}/{len(files)} accepted frames')
+    print(f'{directory}: {scorer} HUD score {report["highest_supported_score"]}; {report["unique_requests"]} inference requests, {len(unique)} glyphs; {len(accepted)}/{len(files)} accepted frames')
 
 
 if __name__=='__main__':
     import argparse, asyncio
     parser = argparse.ArgumentParser()
     parser.add_argument('runs',nargs='+',type=Path)
+    parser.add_argument('--typed',action='store_true',help='Explicitly invoke the recorded provider for glyph judgments instead of literal lookup')
     args = parser.parse_args()
     async def main():
         for directory in args.runs:
-            await collect(directory)
+            await collect(directory,typed=args.typed)
     asyncio.run(main())

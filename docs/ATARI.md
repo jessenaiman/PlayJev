@@ -1,15 +1,16 @@
-# Hosted Jev Atari players
+# Atari typed-controller adapters
 
-EmulatorJS runs the ROM in Chromium. Hosted TypeSafe Jev receives **text geometry**,
-not screenshots (the official Jev API is text-only). No local model or native emulator
-is needed. This adapts PlayJev's observe/choose/execute loop; it is not its trained
+EmulatorJS runs the ROM in Chromium. Controllers receive image-derived **text geometry**,
+not privileged RAM. Development now defaults to **Ollaya CLI**; the arcade score page
+has an explicit hosted Jev provider switch. See [testing](TESTING-ATARI.md) and
+[the front page](ARCADE.md). This adapts PlayJev's observe/choose/execute loop; it is not its trained
 pixel policy, and comparable game performance has not been established.
 
-Games: **Space Invaders**, **Freeway**, and **Defender** (player one). Use your own ROMs.
+Games: **Space Invaders**, **Freeway**, **Defender**, and **Crackpots** (player one). Use your own ROMs.
 
-### Important: this is currently a paused-inference benchmark
+### Important: `playjev.challenge` is the paused-inference benchmark
 
-The current runner is **not continuous real-time play**. It resumes and pauses the
+That runner is **not continuous real-time play**. It resumes and pauses the
 core in short observation intervals, then waits for model inference. Its `complete`
 status means the frame budget was consumed, **not** that the game was completed.
 First-wave evidence is a separate result; elapsed time never proves a stage clear.
@@ -28,12 +29,13 @@ The separate continuous prototype fixes that playback model:
 Click **Start Jev**, watch moving sprite boxes and predicted laser trajectories,
 then **Stop & save**. There is no default test duration or automatic restart.
 **Fullscreen** changes display size only; perception reads the native framebuffer.
-Overlays track canvas bounds on resize/fullscreen and scale their backing store for
+Overlays track the actual WebGL game viewport inside canvas bounds on resize/fullscreen and scale their backing store for
 high-DPI displays. Browser layout checks passed at 390×844, 1920×1080, 768×1024
 (2× DPR), and 3440×1440. These layout checks are not a mobile touchscreen gameplay test.
 
-After stopping, hosted Jev reads distinct HUD glyphs in one batched request and saves
-the observations, choices and usage to `hud-jev.json`. Pixel/template and temporal
+After stopping, the default scorer resolves exact-known HUD glyphs without inference
+and saves observations/provenance to `hud-jev.json`. Optional `playjev.hud RUN --typed`
+uses the recorded provider for typed checks. Pixel/template and temporal
 checks reject unsupported numbers. The prior **1,640** Space Invaders result was
 recovered by this pipeline; the continuous 20-second smoke test recorded **215**.
 Different playback modes remain separate on the board. See
@@ -89,8 +91,9 @@ Freeway choices are `up`, `down`, `noop`. Its observation filters out the gray r
 and white lane markings to retain colored cars/chickens. Space Invaders supports
 `left`, `right`, `fire`, `left+fire`, `right+fire`, `noop`.
 Sprite roles are hints, not verified game state. This is an experimental policy.
-The runner uses a fixed duration, including time spent on a game-over screen; it
-does not restart automatically. There is no reliable automatic game-over detector yet.
+The runner has a fixed budget but must stop at a terminal candidate rather than
+padding known game-over frames. It does not restart automatically. Reliable Freeway
+terminal detection has not yet been established.
 
 ## Rewatch runs
 

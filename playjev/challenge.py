@@ -13,8 +13,6 @@ import shutil
 import subprocess
 import threading
 import time
-import urllib.request
-from urllib.parse import urlparse
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -147,9 +145,11 @@ class Player(ABC):
 
 
 class JevPlayer(Player):
-    def __init__(self, question=None, model="jev-latest"):
+    def __init__(self, question=None, model="jev-latest", transport=None):
         self.question = question
         self.model = model
+        from .transports import HostedJevTransport
+        self.transport = transport or HostedJevTransport()
 
     async def decide(self, state, game):
         question = self.question or (f"Which short controller action should player one take next? {game.goal} "
@@ -162,13 +162,16 @@ class JevPlayer(Player):
         return {"request": body, "response": result, "choice": answer["choice"], "confidence": answer["confidence"]}
 
     async def request(self, body):
-        def send():
-            req = urllib.request.Request("https://api.typesafe.ai/v1/systemone", json.dumps(body).encode(),
-                {"Authorization": "Bearer " + os.environ["TYPESAFE_API_KEY"], "Content-Type": "application/json"})
-            # No hidden retries or fallback policy: failed requests stop and mark run incomplete.
-            with urllib.request.urlopen(req, timeout=45) as response:
-                return json.load(response)
-        return await asyncio.to_thread(send)
+        if getattr(self,'decision_timing',None) is not None:
+            from .timing import QUESTION
+            body['state']={**body['state'],'decision_clock':self.decision_timing}
+            body['questions']={**body['questions'],'cycle':QUESTION}
+        if getattr(self,'accuracy_evidence',None) is not None:
+            from .spatial import QUESTIONS
+            body['state']={**body['state'],'accuracy_evidence':self.accuracy_evidence}
+            body['questions']={**body['questions'],**QUESTIONS}
+        # No hidden retries/fallback; cancellation closes this request's client.
+        return await self.transport.request(body)
 
     @staticmethod
     def validate_choice(answer, options):
@@ -217,8 +220,8 @@ class ComposedJevPlayer(JevPlayer):
 
 class GatedJevPlayer(JevPlayer):
     """Jev selects target and safety gates; code performs bounded geometry control."""
-    def __init__(self, question=None, model="jev-latest"):
-        super().__init__(question, model)
+    def __init__(self, question=None, model="jev-latest", transport=None):
+        super().__init__(question, model, transport)
         self.last_player = None
         self.last_seen = None
         self.velocity = 0
@@ -347,37 +350,9 @@ class DefenderJevPlayer(JevPlayer):
 
 class OllayaGatedPlayer(GatedJevPlayer):
     """Identical gates/controller; only the inference transport/model changes."""
-    def __init__(self, question=None, model="kev:0.8b", endpoint="http://127.0.0.1:11435"):
-        super().__init__(question, model)
-        url = urlparse(endpoint)
-        if url.scheme != "http" or url.hostname not in ("127.0.0.1","localhost","::1") or url.username or url.password or url.query or url.fragment or url.path not in ("","/"):
-            raise ValueError("Ollaya endpoint must be a plain loopback HTTP URL")
-        self.endpoint = endpoint.rstrip("/")
-
-    async def request(self, body):
-        def send():
-            headers = {"Content-Type":"application/json"}
-            if os.environ.get("OLLAYA_API_KEY"):
-                headers["Authorization"] = "Bearer " + os.environ["OLLAYA_API_KEY"]
-            # Explicit loopback transport: never send the TypeSafe credential
-            # locally, never use a system proxy, never silently fall back to Jev.
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            answers, responses, subrequests = {}, [], []
-            for key, question in body["questions"].items():
-                # The 6GB GPU cannot fit four long question contexts together.
-                # Questions are independent; preserve their exact state/rubrics
-                # while serializing inference. Never truncate or change controls.
-                part = {**body,"questions":{key:question}}
-                req = urllib.request.Request(self.endpoint+"/v1/systemone",json.dumps(part).encode(),headers)
-                with opener.open(req,timeout=180) as response:
-                    result = json.load(response)
-                answers.update(result["answers"])
-                responses.append(result)
-                subrequests.append(part)
-            return {"model":responses[0]["model"],"answers":answers,
-                    "usage":{k:sum(r["usage"][k] for r in responses) for k in ("input_tokens","output_tokens")},
-                    "transport":"sequential-single-question","subrequests":subrequests,"subresponses":responses}
-        return await asyncio.to_thread(send)
+    def __init__(self, question=None, model="kev:0.8b"):
+        from .transports import OllayaTransport
+        super().__init__(question,model,OllayaTransport())
 
 
 class BaselinePlayer(Player):
@@ -391,8 +366,10 @@ class BaselinePlayer(Player):
 
 class EmulatorSession:
     """All execution goes through EmulatorJS's browser API."""
-    def __init__(self, assets, rom, visible=False, video_dir=None, speed=0.25):
+    def __init__(self, assets, rom, visible=False, video_dir=None, speed=0.25, responsive=False, device_scale_factor=None):
         self.assets, self.rom, self.visible, self.video_dir, self.speed = assets, rom, visible, video_dir, speed
+        self.responsive=responsive
+        self.device_scale_factor=device_scale_factor
 
     async def __aenter__(self):
         self.server = Server(self.assets, self.rom)
@@ -401,7 +378,9 @@ class EmulatorSession:
         try:
             self.browser = await self.pw.chromium.launch(headless=not self.visible,
                 args=["--autoplay-policy=no-user-gesture-required", "--enable-unsafe-swiftshader"])
-            opts = {"viewport": {"width": 640, "height": 520}}
+            opts = {"no_viewport":True} if self.responsive else {"viewport": {"width": 640, "height": 520}}
+            if self.device_scale_factor is not None:
+                opts['device_scale_factor']=self.device_scale_factor
             if self.video_dir:
                 opts.update(record_video_dir=str(self.video_dir), record_video_size={"width": 640, "height": 520})
             self.context = await self.browser.new_context(**opts)
@@ -554,7 +533,7 @@ async def run(args, player=None):
     if args.player=='jev-gates' and game.id=='crackpots':
         from .crackpots import CrackpotsPlayer
         player=player or CrackpotsPlayer(question,args.model)
-    player = player or (OllayaGatedPlayer(question,args.model,getattr(args,"ollaya_url","http://127.0.0.1:11435")) if args.player == "ollaya-gates" else
+    player = player or (OllayaGatedPlayer(question,args.model) if args.player == "ollaya-gates" else
                         DefenderJevPlayer(question,args.model) if args.player == "jev-gates" and game.id == "defender" else
                         GatedJevPlayer(question, args.model) if args.player == "jev-gates" else
                         ComposedJevPlayer(question, args.model) if args.player == "jev-composed" else
@@ -566,11 +545,10 @@ async def run(args, player=None):
     config["source_sha256"] = {name:digest((ROOT/"playjev"/name).read_bytes()) for name in ("challenge.py","invaders.py","defender.py")}
     config["policy_version"] = "laser-gates-compact-v2" if args.player in ("jev-gates","ollaya-gates") and game.id=="space-invaders" else None
     if args.player=="ollaya-gates":
-        config["ollaya_url"] = player.endpoint
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(player.endpoint+"/api/tags",timeout=10) as response:
-            tags = json.load(response)["models"]
-        config["model_manifest"] = next((r for r in tags if r["name"]==args.model), None)
+        config['provider']='ollaya'
+        config['transport']='ollaya-cli'
+        from .transports import ollaya_manifest
+        config['model_manifest']=await ollaya_manifest(args.model)
     summary = {"schema": SCHEMA, "challenge_id": metadata["challenge_id"], "game": game.id,
                "budget_frames": metadata["budget_frames"], "config": config, "status": "incomplete", "score": None,
                "metric": "highest-observed-player-one-hud-score",
@@ -716,18 +694,17 @@ def confirm_score(args):
 
 
 def compare(args):
-    rows = [(p, json.loads((p / "summary.json").read_text())) for p in args.runs]
-    groups = {}
-    for path, row in rows:
-        groups.setdefault(row["challenge_id"], []).append((path, row))
-    for challenge, items in groups.items():
-        print(f"\nChallenge {challenge[:12]} (scores never ranked across games/challenges)")
-        eligible = [(p, r) for p, r in items if r["status"] == "complete" and r["game_frames"] == r["budget_frames"] and r["score_verified"]]
-        for rank, (path, row) in enumerate(sorted(eligible, key=lambda x: x[1]["score"], reverse=True), 1):
-            print(f"{rank}. {row['score']}  {path}  {json.dumps(row['config'])}")
-        for path, row in items:
-            if (path, row) not in eligible:
-                print(f"Unranked: {path} ({row['status']}; confirmed score={row['score_verified']}; OCR candidate={row['score_candidate']})")
+    from .scoreboard import load_groups
+    errors=[]
+    for (game,challenge,mode),items in load_groups(args.runs,errors=errors).items():
+        print(f"\n{game} · Challenge {challenge[:12]} · {mode} (separate comparison contract)")
+        ranked=[r for r in items if r['eligible']]
+        for rank,row in enumerate(ranked,1):
+            print(f"{rank}. {row['score']}  {row['run']}  {json.dumps(row['config'])}")
+        for row in items:
+            if not row['eligible']:
+                print(f"Unranked: {row['run']} ({row['status']}; supported evidence={row['score_supported']}; OCR candidate={row.get('score_candidate')})")
+    for error in errors:print(f"Unreadable: {error['run']} ({error['error']})")
 
 
 async def experiment(args):
@@ -776,7 +753,6 @@ def cli():
     r.add_argument("challenge", type=Path)
     r.add_argument("--player", choices=("jev", "jev-composed", "jev-gates", "ollaya-gates", "fixed", "random"), default="jev")
     r.add_argument("--model", default="jev-latest")
-    r.add_argument("--ollaya-url", default="http://127.0.0.1:11435", help="Loopback Ollaya server; never receives the TypeSafe key")
     r.add_argument("--observation", choices=("regions", "compact", "single"), default="regions")
     r.add_argument("--question", type=Path)
     r.add_argument("--action-frames", type=int, default=6)

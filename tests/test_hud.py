@@ -1,7 +1,7 @@
 import io
 import unittest
 from PIL import Image
-from playjev.hud import FONT, digit_grids, assemble, request_for
+from playjev.hud import FONT, digit_grids, assemble, request_for, exact_answers
 
 
 class HudTests(unittest.TestCase):
@@ -28,3 +28,9 @@ class HudTests(unittest.TestCase):
 
     def test_unknown_and_blank_not_invented(self):
         self.assertEqual(len(request_for([FONT['0']])['questions']),1)
+
+    def test_exact_lookup_without_inference(self):
+        grids=[FONT[c] for c in '1640']
+        self.assertEqual(assemble(grids,{'answers':exact_answers(grids)})['value'],1640)
+        damaged=['#..','...','...','...','...']
+        self.assertEqual(exact_answers([damaged])['digit_0']['choice'],'unknown')

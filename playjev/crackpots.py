@@ -109,7 +109,7 @@ class CrackpotsPlayer(JevPlayer):
             'lane':{'type':'choice','instructions':'Choose a pot with catchable_bugs>0, preferring ready_to_drop or short arrival_frames. Keep previous_target_x only while its catchable_bugs remains positive; otherwise switch to a catchable lane. When bugs are present, a zero-catchable lane is a miss. If no pots have catchable bugs, hold or prepare centrally. These are short-term estimated intercepts, not guaranteed catches.', 'criteria':criteria},
             'drop':{'type':'choice','instructions':'Should Potsy release a pot now? `drop_ready` means an observed pot is aligned within four pixels AND an approaching bug is predicted to intersect its falling path before reaching the window. Choose fire when drop_ready is true; release otherwise.', 'criteria':{'fire':'Release the aligned flowerpot into the predicted bug path','release':'No aligned interception opportunity; wait'}}}}
         response=await self.request(body)
-        gates={k:self.validate_choice(response['answers'][k],q['criteria']) for k,q in body['questions'].items()}
+        gates={k:self.validate_choice(response['answers'][k],body['questions'][k]['criteria']) for k in ('lane','drop')}
         lane=next((l for l in lanes if l['id']==gates['lane']['choice']),None)
         target=lane['x'] if lane else 80 if gates['lane']['choice']=='scan' else px
         self.last_target=target

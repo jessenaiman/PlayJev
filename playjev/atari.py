@@ -79,6 +79,11 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "text/html")
             self.end_headers()
             self.wfile.write(data)
+        elif path == "/live-controls.js":
+            self.send_response(200)
+            self.send_header('Content-Type','application/javascript')
+            self.end_headers()
+            self.wfile.write((ROOT/'games/emulatorjs/live-controls.js').read_bytes())
         elif path == "/rom.a26":
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")

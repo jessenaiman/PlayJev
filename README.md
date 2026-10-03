@@ -78,11 +78,23 @@ cost, and this release leaves that off. The prompt is built in
 
 ## ▶️ Run It
 
-### Atari through EmulatorJS + hosted TypeSafe Jev
+### Atari through EmulatorJS · Ollaya CLI / hosted TypeSafe Jev
 
-The added [Atari challenge runner](docs/ATARI.md) supports **Space Invaders, Freeway and Defender**,
+Start with the [Jev Arcade front page](docs/ARCADE.md):
+
+```bash
+.venv/bin/python -m playjev.arcade --open
+```
+
+It shows evidence-linked scores, uses typed judgments to locate a playable game, and starts one
+continuous attempt on your click. Live ASCII metrics appear beside the game and on
+the front page. [Outstanding work and iteration order](docs/ATARI-TASKS.md).
+
+The added [Atari challenge runner](docs/ATARI.md) supports **Space Invaders, Freeway, Defender and Crackpots**,
 slow live watching, recorded replays, saved-state/frame-budget challenges, and experiments.
-It uses the existing TypeSafe API key and text observations—no local model. This is a
+Development defaults to the **Ollaya CLI**, with a score-page provider toggle for
+explicit hosted Jev use. [Testing and upstream compatibility](docs/TESTING-ATARI.md).
+The policies use image-derived structured observations. This is a
 separate experimental adapter, not the trained pixel policy described below. It has
 a [verified first-wave checkpoint](docs/ATARI-CHECKPOINT.md) and evidence-linked high-score board.
 

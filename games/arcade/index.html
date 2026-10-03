@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jev Arcade · High scores & live games</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui;background:#10131c;color:#e9edfa}body{margin:0}main{max-width:1400px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}h1{font-size:36px;margin:0}h2{margin:28px 0 12px}p{color:#b4bdd6}button,input,select{font:inherit;border:1px solid #46506c;border-radius:9px;background:#20283a;color:inherit;padding:11px}button{cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}button.primary{background:#6b52dc;border-color:#9e8afa}input{min-width:0;flex:1}.intent{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.card,aside{background:#191f2e;border:1px solid #30394f;border-radius:12px;padding:18px}.card.selected{border-color:#b199ff;box-shadow:0 0 0 2px #6b52dc}.card h3{margin:0 0 8px}.badge{font:12px monospace;color:#a9edb6}aside{align-self:start;position:sticky;top:16px}pre{font:12px/1.45 monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#a9edb6}.scores{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:10px;text-align:left;border-bottom:1px solid #30394f;white-space:nowrap}a{color:#bdaeff}.notice{padding:12px;background:#20283a;border-radius:9px}.small{font-size:13px}.error{color:#ff9b9b}footer{margin-top:24px;color:#98a3bd}@media(max-width:900px){.layout{grid-template-columns:1fr}aside{position:static}main{padding:16px}h1{font-size:28px}}
+.layout>*{min-width:0}.scores{max-width:100%}*{box-sizing:border-box}
+</style>
+ <main><header><div><h1>Jev Arcade</h1><p>Watch one real attempt. Keep the score evidence.</p></div><span class="badge" id="provider">LOCAL ROMS · NO HIDDEN RESETS</span></header>
+<div class="intent"><input id="intent" aria-label="What to play" value="Continue Crackpots and try to improve the high score"><button id="recommend">Let Jev locate a game</button></div>
+<label>Decision provider <select id="inference-provider"><option value="ollaya">Ollaya CLI · local</option><option value="jev">Jev · hosted</option></select></label>
+<p class="small" id="inference-note">Ollaya is the development default. Hosted Jev uses API quota only when you request a recommendation or start an attempt. Changes apply to the next attempt.</p>
+<p class="notice" id="navigation" role="status">Loading available games and score evidence…</p>
+<div class="layout"><section><h2>Choose a game</h2><div class="cards" id="games"></div>
+<h2>High scores & reviewed attempts</h2><p class="small">Ranked benchmarks and unranked live attempts are separate. Confidence is not a score. Game-over detection is still being calibrated.</p>
+<div class="scores"><table><thead><tr><th>Game</th><th>Score</th><th>Result</th><th>Mode / challenge</th><th>Player</th><th>Evidence</th></tr></thead><tbody id="scores"></tbody></table></div>
+<h2>Next integrations</h2><p>Dig Dug · Pitfall · Asteroids — adapters pending. Jev/Ollaya alternating turns — blocked pending a working local inference setup.</p></section>
+<aside><h3>Live Jev processes</h3><pre id="metrics">[ NO ACTIVE ATTEMPT ]
+
+Jev locates a playable game.
+You choose when to start it.
+The emulator keeps running
+while decisions are pending.</pre><button id="stop" disabled>Stop & save active attempt</button><p class="small">The game opens in a separate visible browser window. This local front page stays open for scores and metrics.</p></aside></div>
+<footer>Loopback-only prototype. No ROMs or credentials are uploaded by this page. Game selection judgments and usage are saved locally.</footer></main>
+<script>
+let state,token,selected,pending=false;const $=id=>document.getElementById(id);
+function text(tag,value){const e=document.createElement(tag);e.textContent=value;return e}
+async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Arcade-Token':token},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw Error(v.error||r.status);return v}
+function render(){
+ $('provider').textContent=(state.inference?.provider==='jev'?'HOSTED JEV':'OLLAYA CLI')+' · '+(state.inference?.model||'unknown')+' · NO HIDDEN RESETS';
+ $('inference-provider').value=state.inference?.provider||'ollaya';
+ $('games').replaceChildren();
+ for(const g of state.games){const c=text('div','');c.className='card'+(selected===g.id?' selected':'');c.append(text('h3',g.title),text('p',g.goal));const note=text('p',g.available?'Continuous adapter ready':'Continuous adapter/setup pending');note.className='badge';c.append(note);const b=text('button','Start '+g.title);b.className='primary';b.disabled=!g.available||!!state.active?.running;b.onclick=async()=>{b.disabled=true;try{const v=await post('/api/start',{game:g.id});$('navigation').textContent='Opening '+g.title+' · one attempt · '+v.run;await refresh()}catch(e){$('navigation').textContent=e.message}};c.append(b);$('games').append(c)}
+ $('scores').replaceChildren();
+  const results=state.scores.sort((a,b)=>a.game.localeCompare(b.game)||a.mode.localeCompare(b.mode)||a.challenge.localeCompare(b.challenge)||(b.score??-1)-(a.score??-1));
+  for(const r of results){const tr=text('tr','');for(const v of [r.game,r.score===null?'Pending review':r.score.toLocaleString(),r.ranked?'ranked benchmark':r.score===null?r.status:'reviewed · unranked',r.mode+' / '+r.challenge.slice(0,8),(r.provider||r.player)+' · '+(r.model||r.player)+' · '+r.reviewer])tr.append(text('td',v));const td=text('td','');for(const [label,path] of [['Replay',r.replay],['HUD',r.hud]]){const a=text('a',label);a.href=path;a.target='_blank';a.rel='noopener';td.append(a,document.createTextNode(' '))}tr.append(td);$('scores').append(tr)}
+ const active=state.active;$('stop').disabled=!active?.running;
+  if(active)$('metrics').textContent='[ '+active.phase.toUpperCase()+' ]\n'+active.provider+' · '+active.model+'\n'+(active.error?active.error+'\n':'')+(active.metrics?.ascii||(active.game+'\n'+active.run));
+}
+async function refresh(){const r=await fetch('/api/state');if(!r.ok)throw Error('Front page unavailable');state=await r.json();token=state.token;render()}
+async function recommend(){if(pending)return;pending=true;$('recommend').disabled=true;$('navigation').textContent='Jev is locating a playable game…';try{const r=await post('/api/recommend',{intent:$('intent').value});selected=r.choice==='wait'?null:r.choice;$('navigation').textContent='Jev: '+r.choice+' · '+r.readiness+' · confidence '+(r.confidence??0).toFixed(2)+' — click Start for one visible attempt.';render()}catch(e){$('navigation').textContent='Jev navigation unavailable: '+e.message}finally{pending=false;$('recommend').disabled=false}}
+$('recommend').onclick=recommend;$('stop').onclick=async()=>{try{await post('/api/stop',{});$('navigation').textContent='Stop requested. Waiting for video and score evidence to finish.'}catch(e){$('navigation').textContent=e.message}};
+$('inference-provider').onchange=async()=>{const control=$('inference-provider');control.disabled=true;try{const r=await post('/api/inference',{provider:control.value});selected=null;$('navigation').textContent='Provider selected: '+r.provider+' · '+r.model+'. No inference called. Click Recommend or Start; any running attempt keeps its provider.';await refresh()}catch(e){$('navigation').textContent=e.message}finally{control.disabled=false}};
+refresh().then(()=>$('navigation').textContent='Choose a provider, then ask for a recommendation or start one visible attempt.').catch(e=>$('navigation').textContent=e.message);
+setInterval(()=>refresh().catch(()=>{}),3000);
+</script></html>

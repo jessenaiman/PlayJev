@@ -3,23 +3,26 @@ import argparse
 import asyncio
 import json
 import time
+from contextlib import suppress
 from pathlib import Path
 from dotenv import load_dotenv
-from .challenge import EmulatorSession, GatedJevPlayer, GAMES, ROOT, digest
-from .invaders import geometry, motion
-from .hud import collect
+from playwright.async_api import Error as BrowserError
+from .challenge import EmulatorSession, GAMES, ROOT, digest
+from .runtime import registry
+from .metrics import Metrics, write_phase
+from .timing import DecisionClock
+from .spatial import evidence as spatial_evidence
+from .execution import FrameStamp, DecisionEnvelope
+from .transports import inference, ollaya_manifest
 
 
 async def play(args):
     metadata = json.loads((args.challenge/'challenge.json').read_text())
-    if metadata['game'] not in ('space-invaders','crackpots'):
-        raise ValueError('Continuous tracking supports Space Invaders and Crackpots')
+    profiles=registry()
+    if metadata['game'] not in profiles:
+        raise ValueError('Game does not have a continuous adapter')
     game=GAMES[metadata['game']]
-    crackpots=game.id=='crackpots'
-    if crackpots:
-        from .crackpots import geometry as observe_game, tracks, guard, overlay, CrackpotsPlayer
-    else:
-        observe_game=geometry
+    profile=profiles[game.id]
     rom, assets = Path(metadata['rom_path']), Path(metadata['assets_path'])
     from .challenge import asset_digest
     snapshot=(args.challenge/'start.state').read_bytes()
@@ -27,81 +30,87 @@ async def play(args):
         raise ValueError('Challenge bytes changed')
     load_dotenv(ROOT.parent/'.env',override=False)
     args.out.mkdir(parents=True,exist_ok=False)
-    player=CrackpotsPlayer() if crackpots else GatedJevPlayer()
+    write_phase(args.out,'starting')
+    provider=getattr(args,'provider','ollaya')
+    model,transport=inference(provider,getattr(args,'model',None))
+    player=profile.player_factory(model=model,transport=transport)
     pending=None
     records=[]
     elapsed=0
     terminal_samples=0
     sample=0
+    metrics=Metrics(game.id);clock=DecisionClock()
     summary={'schema':'jev-live-v1','game':game.id,'challenge_id':metadata['challenge_id'],
              'status':'incomplete','score':None,'score_verified':False,'budget_frames':None,
-             'config':{'player':'jev-gates','model':'jev-latest','policy_version':'continuous-compact-v1'},
+               'config':{'player':'jev-gates','provider':provider,'model':model,'policy_version':profile.policy_version,'timing_gate':'bounded-cycle-v1','score_reader':'exact-templates+independent-frame-repeat-v1'},
               'playback_mode':'continuous','game_completed':False}
-    if crackpots:
-        summary['config']['policy_version']='crackpots-interception-v2'
-        summary['terminal_detection']='not-yet-validated; use Stop & save'
+    summary['terminal_detection']=profile.terminal_note
+    if provider=='ollaya':
+        summary['config']['model_manifest']=await ollaya_manifest(model)
     summary['config']['source_sha256']={name:digest((ROOT/'playjev'/name).read_bytes())
-        for name in ('live.py','hud.py', 'crackpots.py' if crackpots else 'invaders.py')}
-    async with EmulatorSession(assets,rom,True,args.out/'video',1) as env:
+        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py',profile.source)}
+    summary['config']['display_sha256']={name:digest((ROOT/'games/emulatorjs'/name).read_bytes())
+        for name in ('index.html','live-controls.js')}
+    async with EmulatorSession(assets,rom,True,args.out/'video',1,responsive=True) as env:
+        frame=None
         async def raw_capture():
             # DOM overlays are for the viewer, never input to perception/OCR.
             # WebGL canvas.toDataURL can be black once its buffer is discarded.
             # EmulatorJS exposes a read-only framebuffer PNG via the core.
-            data=await env.page.evaluate("async()=>Array.from(await Promise.race([EJS_emulator.gameManager.screenshot(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Framebuffer screenshot timed out')),3000))]))")
-            return bytes(data)
+            captured=await env.page.evaluate('''async()=>{
+                const gm=EJS_emulator.gameManager,before=gm.getFrameNum();
+                let timer;
+                try {
+                    const data=await Promise.race([gm.screenshot(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Framebuffer screenshot timed out')),3000);})]);
+                    return {data:Array.from(data),before,after:gm.getFrameNum()};
+                } finally {clearTimeout(timer);}
+            }''')
+            data=bytes(captured['data'])
+            return data,FrameStamp(captured['before'],captured['after'],digest(data))
         try:
             await env.frames([],40,slow=False)
             await env.restore_matching(snapshot,metadata['ready_state_sha256'])
-            initial=await env.capture()  # setup is paused and overlay is empty
+            # The initial observation also uses the raw core, not a window-sized
+            # screenshot. Exactly one setup frame processes the screenshot command.
+            await env.page.evaluate('()=>{window.initialCapture=EJS_emulator.gameManager.screenshot();}')
+            await env.frames([],1,slow=False)
+            initial=bytes(await env.page.evaluate('async()=>Array.from(await window.initialCapture)'))
+            summary['observation_setup_frames']=1
+            summary['initial_frame_sha256']=digest(initial)
             frame=initial
             (args.out/'start.png').write_bytes(initial)
-            await env.page.evaluate('''() => {
-                window.liveRunning=false;window.liveStopped=false;window.liveButtons=[];
-                const status=document.getElementById('status');status.textContent='Continuous mode — Start plays one attempt. Boxes are pixel estimates; dashed lines are predicted laser motion.';
-                const start=document.createElement('button');start.textContent='Start Jev';
-                const stop=document.createElement('button');stop.textContent='Stop & save';
-                const full=document.createElement('button');full.textContent='Fullscreen';
-                full.onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(error){full.textContent='Fullscreen unavailable';}};
-                status.append(start,stop,full);
-                window.releaseLive=()=>{clearTimeout(window.liveTimer);for(const b of window.liveButtons)EJS_emulator.gameManager.simulateInput(0,b,0);window.liveButtons=[];};
-                start.onclick=()=>{if(window.liveRunning||window.liveStopped)return;window.liveRunning=true;EJS_emulator.play();};
-                stop.onclick=()=>{window.releaseLive();EJS_emulator.pause();window.liveStopped=true;};
-                window.applyLive=({buttons,rest,frames})=>{
-                    window.releaseLive();const gm=EJS_emulator.gameManager;
-                    window.liveButtons=buttons;for(const b of buttons)gm.simulateInput(0,b,1);
-                    const end=gm.getFrameNum()+frames;
-                    const tick=()=>{
-                        if(window.liveStopped)return;
-                        if(gm.getFrameNum()<end){window.liveTimer=setTimeout(tick,8);return;}
-                        window.releaseLive();window.liveButtons=rest;for(const b of rest)gm.simulateInput(0,b,1);
-                        window.liveTimer=setTimeout(window.releaseLive,500);
-                    };tick();
-                };
-            }''')
+            await env.page.evaluate('window.installLiveControls()')
             await env.page.evaluate('game=>{document.title="Jev Atari — "+game;}',game.id)
             print('Browser ready. Click Start Jev; Stop & save ends this single attempt.',flush=True)
-            if args.autostart:
+            write_phase(args.out,'waiting-for-start')
+            external_stop=getattr(args,'stop_file',None)
+            if external_stop and external_stop.exists():
+                await env.page.evaluate('window.liveStopped=true')
+                summary['stop_reason']='front-page-user-stop'
+            elif args.autostart:
                 await env.page.get_by_role('button',name='Start Jev',exact=True).click()
             await env.page.wait_for_function('window.liveRunning || window.liveStopped',timeout=0)
+            write_phase(args.out,'playing')
             origin=await env.page.evaluate('EJS_emulator.gameManager.getFrameNum()')
-            previous=observe_game(initial)
+            previous=profile.observe(initial)
             previous_frame=origin
             started=time.monotonic()
             log=(args.out/'decisions.jsonl').open('w')
+            frame_log=(args.out/'frames.jsonl').open('w')
             try:
                 while not await env.page.evaluate('window.liveStopped'):
-                    number=await env.page.evaluate('EJS_emulator.gameManager.getFrameNum()')
+                    if (args.out/'stop.request').exists() or (external_stop and external_stop.exists()):
+                        summary['stop_reason']='front-page-user-stop'
+                        break
+                    frame,stamp=await raw_capture()
+                    number=stamp.after
                     elapsed=number-origin
-                    frame=await raw_capture()
-                    current=observe_game(frame)
-                    if crackpots:
-                        current['bug_tracks']=tracks(previous,current,max(1,number-previous_frame))
-                    else:
-                        current['projectile_motion']=motion(previous,current, max(1,number-previous_frame))
-                    await env.page.evaluate('o=>window.drawTracking(o)',overlay(current) if crackpots else current)
+                    current=profile.observe(frame)
+                    profile.track(previous,current,max(1,number-previous_frame))
+                    await env.page.evaluate('o=>window.drawTracking(o)',{**profile.overlay(current),'capture_frame':stamp.before,'source_size':[160,210]})
                     # Three consecutive non-black observations, never a missing
                     # player sprite, are a stop candidate; not a verified death.
-                    terminal_samples=terminal_samples+1 if not crackpots and not current['background_black'] else 0
+                    terminal_samples=terminal_samples+1 if profile.terminal_candidate(current) else 0
                     if terminal_samples>=3:
                         summary['game_over_candidate']={'game_frame':elapsed,'reason':'three-background-color-observations','verified':False}
                         summary['stop_reason']='suspected-game-over'
@@ -111,71 +120,106 @@ async def play(args):
                         break
                     state={'game':summary['game'],'game_frame':elapsed,'action_frames':30,'current':current,'previous':previous,'emulator_paused_during_inference':False}
                     if pending and pending.done():
-                        decision=pending.result()
+                        try:
+                            decision=pending.result()
+                        except Exception:
+                            metrics.failed+=1
+                            raise
                         age=elapsed-request_frame
-                        applied=age<=60 and not current.get('life_indicator_visible',False)
-                        choice=decision['choice']
-                        if crackpots and current['player'] and decision.get('target_x') is not None:
-                            latest_x=(current['player']['box'][0]+current['player']['box'][2])/2
-                            error=decision['target_x']-latest_x
-                            direction='left' if error<-3 else 'right' if error>3 else ''
-                            fire=decision['components']['drop']['choice']=='fire'
-                            choice='+'.join(([direction] if direction else [])+(['fire'] if fire else [])) or 'noop'
-                            decision['executed_choice']=choice
-                            decision['movement_frames']=min(26,max(1,round(abs(error)/0.7))) if direction else 30
-                        # Revalidate motion against the latest geometry. These
-                        # are observed-state predictions, not savestate rollouts.
-                        px=(current['player']['box'][0]+current['player']['box'][2])/2 if current['player'] else None
-                        direction='left' if choice.startswith('left') else 'right' if choice.startswith('right') else 'stay'
-                        speed={'left':-0.5,'right':0.5,'stay':0}[direction]
-                        veto=px is None or (direction=='left' and px<=14) or (direction=='right' and px>=146)
-                        for laser in current.get('projectile_motion',[]):
-                            if laser['direction']=='up':continue
-                            vy=laser['vy'] if laser['direction']=='down' else 0.4
-                            impact=max(0,(183-laser['y'])/vy) if vy and vy>0 else float('inf')
-                            future=max(12,min(148,px+speed*min(impact,18))) if px is not None else None
-                            if impact<=42 and future is not None and abs(future-laser['x'])<=6:veto=True
-                        if crackpots:veto=guard(current,choice)
-                        if veto or px is None:
+                        rejection=envelope.reject_reason(number,args.out.name,0)
+                        applied=rejection is None and not current.get('life_indicator_visible',False)
+                        choice,duration,veto=profile.prepare(current,decision)
+                        if veto:
                             applied=False
                         if applied:
-                            await env.page.evaluate('window.applyLive',{'buttons':game.actions[choice],
+                            execution=await env.page.evaluate('window.applyLive',{'buttons':game.actions[choice],
                                 'rest':game.actions.get(decision.get('rest_choice','noop'),[]),
-                                'frames':min(30,decision.get('movement_frames',30))})
-                        record={'step':len(records),'game_frame':request_frame,'applied_at_frame':elapsed,
-                                'age_frames':age,'applied':applied,'collision_veto':veto,'executed_choice':choice,'decision':decision,
+                                'frames':duration,'deadline':envelope.deadline,'policy_generation':envelope.policy_generation})
+                            applied=execution['applied']
+                            rejection=execution.get('reason')
+                        else:
+                            await env.page.evaluate('window.releaseLive()')
+                            execution={'applied':False,'reason':rejection or ('safety-veto' if veto else 'life-indicator')}
+                        execution_frame=execution.get('frame',number)
+                        age=execution_frame-envelope.source.before
+                        record={'step':len(records),'game_frame':request_frame,'applied_at_frame':execution_frame-origin,
+                                 'age_frames':age,'applied':applied,'collision_veto':veto,'proposed_choice':choice,'executed_choice':choice if applied else 'noop','decision':decision,
+                                 'envelope':envelope.json(),'execution':execution,
+                                'latency_s':time.monotonic()-request_started,
                                 'video_time_s':request_video,'action_video_time_s':time.monotonic()-env.started_wall}
+                        cycle=decision['response']['answers']['cycle']
+                        record['accuracy_checks']={key:decision['response']['answers'][key] for key in ('perception_check','projection_check')}
+                        decision.setdefault('components',{})['cycle']=clock.restart(elapsed,cycle)
+                        metrics.record(record)
                         records.append(record);log.write(json.dumps(record)+'\n');log.flush()
                         pending=None
-                    if pending is None:
-                        request_frame=elapsed;request_video=time.monotonic()-env.started_wall
+                    if pending is None and clock.due(elapsed):
+                        envelope=DecisionEnvelope(args.out.name,len(records),stamp)
+                        request_frame=stamp.before-origin;request_video=time.monotonic()-env.started_wall
+                        request_started=time.monotonic();player.decision_timing=clock.state(elapsed)
+                        transform=await env.page.evaluate('window.trackingTransform()')
+                        if transform is None:
+                            raise ValueError('Renderer viewport unavailable; projection cannot be verified')
+                        player.accuracy_evidence=spatial_evidence(current,transform['canvas_rect'],content=transform['content_rect'])
                         pending=asyncio.create_task(player.decide(state,game))
+                        metrics.start_request()
                     (args.out/f'frame-{sample:04}.png').write_bytes(frame)
+                    frame_log.write(json.dumps({'evidence':f'frame-{sample:04}.png','before':stamp.before,'after':stamp.after,'sha256':stamp.sha256})+'\n');frame_log.flush()
                     sample+=1
+                    snapshot=metrics.snapshot(current,elapsed,pending is not None,clock)
+                    metrics.write(args.out,snapshot)
+                    await env.page.evaluate('text=>{const panel=document.getElementById("metrics");if(panel)panel.textContent=text;}',snapshot['ascii'])
                     previous,previous_frame=current,number
                     await asyncio.sleep(0.1)
             finally:
-                log.close()
+                log.close();frame_log.close()
             summary['status']='stopped'
             summary.setdefault('stop_reason','user-stop')
+        except BrowserError as exc:
+            if env.page.is_closed():
+                summary['status']='stopped'
+                summary['stop_reason']='browser-closed; last captured frame only'
+            else:
+                summary['status']='incomplete'
+                summary['error']=str(exc)
+        except Exception as exc:
+            summary['status']='incomplete'
+            summary['error']=f'{type(exc).__name__}: {exc}'
         finally:
-            if pending:
-                pending.cancel()
+            write_phase(args.out,'stopping')
             if not env.page.is_closed():
-                await env.page.evaluate('()=>{window.releaseLive?.();EJS_emulator.pause();}')
+                with suppress(BrowserError):
+                    await env.page.evaluate('()=>{window.releaseLive?.();EJS_emulator.pause();}')
+            if pending:
+                if not pending.done():
+                    metrics.cancelled+=1
+                    pending.cancel()
+                await asyncio.gather(pending,return_exceptions=True)
+            if frame is not None:
                 (args.out/'final.png').write_bytes(frame)
             summary['game_frames']=elapsed
             summary['decisions']=len(records)
+            summary['metrics']=metrics.counters()
+            metrics.write(args.out,metrics.snapshot(previous if 'previous' in locals() else {},elapsed,False,clock))
             (args.out/'summary.json').write_text(json.dumps(summary,indent=2))
+            write_phase(args.out,'recording')
     videos=list((args.out/'video').glob('*.webm'))
     if videos:videos[0].rename(args.out/'replay.webm')
     from .challenge import replay_html
     replay_html(args.out,summary,records)
-    if crackpots:
-        from .crackpots_score import collect as collect_crackpots
-        await collect_crackpots(args.out)
-    else:
-        await collect(args.out)
+    if (args.out/'final.png').exists():
+        write_phase(args.out,'scoring')
+        try:
+            await profile.score_collector(args.out)
+        except Exception as exc:
+            summary=json.loads((args.out/'summary.json').read_text())
+            summary['score_error']=f'{type(exc).__name__}: {exc}'
+            (args.out/'summary.json').write_text(json.dumps(summary,indent=2))
+            write_phase(args.out,'failed',error=summary['score_error'])
+            raise
+    write_phase(args.out,'failed' if summary.get('error') else 'saved',error=summary.get('error'))
+    if summary.get('error'):
+        raise RuntimeError(summary['error'])
 
 
 if __name__=='__main__':
@@ -184,6 +228,9 @@ if __name__=='__main__':
     p.add_argument('--out',type=Path,required=True)
     p.add_argument('--seconds',type=float,help='Optional wall-time smoke-test cap; default has no time limit')
     p.add_argument('--autostart',action='store_true',help='For smoke checks; default waits for your click')
+    p.add_argument('--stop-file',type=Path,help='Front-page cooperative Stop & save marker')
+    p.add_argument('--provider',choices=('ollaya','jev'),default='ollaya',help='Default is local Ollaya CLI; hosted Jev requires explicit selection')
+    p.add_argument('--model',help='Provider model name (default kev:0.8b or jev-latest)')
     args=p.parse_args()
     # Counters belong inside the coroutine's local scope.
     asyncio.run(play(args))
