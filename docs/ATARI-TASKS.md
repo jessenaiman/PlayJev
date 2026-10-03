@@ -17,8 +17,9 @@ session; V2 API discovery found no todo route/schema. No native todo update is c
    completed two replies after 258/215 frames (4.24/3.53 s), rejected both, zero applied.
 4. **Pending:** Dig Dug high-score/pump/terminal calibration and fresh-frame discovered
    controller integration; never claim a win or unknown score as zero.
-5. **In progress:** final review/publication. Native capture is consolidated; further
-   lifecycle refactoring awaits findings from [REFACTOR-PROMPTS.md](REFACTOR-PROMPTS.md).
+5. **Completed:** tested code checkpoint `a49128d` pushed to the fork and remote SHA
+   verified. Native capture is consolidated; further lifecycle refactoring awaits
+   findings from [REFACTOR-PROMPTS.md](REFACTOR-PROMPTS.md).
 6. **Queued:** terminal contracts, real compositor/touch checks, fair provider trials,
    additional games, vision/free-model routing and supported native task integration.
 
@@ -183,7 +184,9 @@ See [TESTING-ATARI.md](TESTING-ATARI.md) for upstream/local test contracts and f
       inputs and native terrain/enemy/player candidates. Score remains unknown.
 - [x] Run visible Dig Dug and resume checks on Ollaya CLI only; preserve delayed/failed
       actions and recordings without claiming successful LLM play.
-- [ ] Update documentation, run offline regressions, review and publish supported scope.
+- [x] Update docs, run 75 offline regressions, local CLI evidence review (`ready`),
+      and publish code checkpoint `a49128d`; remote SHA verified. See
+      [RESUME-DISCOVERY-CHECKPOINT.md](RESUME-DISCOVERY-CHECKPOINT.md).
 
 ## 10. Initial-load discovery and classification — active
 
