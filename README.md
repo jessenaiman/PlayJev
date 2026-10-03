@@ -78,6 +78,13 @@ cost, and this release leaves that off. The prompt is built in
 
 ## ▶️ Run It
 
+### Atari through EmulatorJS + hosted TypeSafe Jev
+
+The added [Atari challenge runner](docs/ATARI.md) supports **Space Invaders and Freeway**,
+slow live watching, recorded replays, saved-state/frame-budget challenges, and experiments.
+It uses the existing TypeSafe API key and text observations—no local model. This is a
+separate experimental adapter, not the trained pixel policy described below.
+
 The model plays a game, one command:
 
 ```bash
@@ -261,4 +268,3 @@ them.
 The roster ships silent. Every sound and music file was deleted, which costs nothing: the driver already
 aborted every audio request (`playjev/env.py`), the shim forces media elements muted, and Chromium runs with
 `--mute-audio`. Every frame in this repository, training or demo, was produced in silence.
-

@@ -1,0 +1,154 @@
+# Hosted Jev Atari players
+
+EmulatorJS runs the ROM in Chromium. Hosted TypeSafe Jev receives **text geometry**,
+not screenshots (the official Jev API is text-only). No local model or native emulator
+is needed. This adapts PlayJev's observe/choose/execute loop; it is not its trained
+pixel policy, and comparable game performance has not been established.
+
+Games: **Space Invaders** and **Freeway** (player one). Use your own ROMs.
+The existing parent `.env` supplies `TYPESAFE_API_KEY`; the key stays in Python,
+never browser JavaScript, logs, videos or metadata.
+
+## Setup
+
+From `PlayJev/`:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-atari.txt
+.venv/bin/playwright install chromium
+```
+
+Use matching EmulatorJS **4.2.3** JavaScript and bundled Atari assets. The current
+setup is in sibling `EmulatorJS/node_modules/@emulatorjs/emulatorjs/data`;
+the development branch uses a different save-state API. Set `create --assets PATH`
+for another installation. ROM defaults are under
+`~/Games/roms/Atari 2600 Champion Collection/`; override with `create --rom FILE`.
+
+## Watch live, slower
+
+```bash
+.venv/bin/python -m playjev.challenge create space-invaders challenges/invaders-10s --seconds 10
+.venv/bin/python -m playjev.challenge run challenges/invaders-10s --visible --speed 0.25 --action-frames 30
+```
+
+The browser shows live action, confidence and **game time**. Default speed is ¼ speed;
+`--speed 0.1` is slower. `--watch-delay 1` holds the selected action label for another
+second before execution. The emulator is paused throughout inference/watch delays.
+Action durations are in **emulator frames**, unaffected by inference latency or speed.
+At 60 Hz, 30 frames is half a second. The last action is clipped to the challenge budget.
+
+10 game seconds with 30-frame actions makes 20 API calls. With 6-frame actions it
+makes 100. Challenge creation and fixed/random baselines make **no API calls**.
+Long challenges can cost many calls; do not mistake wall time for game time.
+Ctrl+C stops and marks the run incomplete; it cannot be ranked.
+
+## Second game: Freeway
+
+```bash
+.venv/bin/python -m playjev.challenge create freeway challenges/freeway-10s --seconds 10
+.venv/bin/python -m playjev.challenge run challenges/freeway-10s --visible --speed 0.25 --action-frames 30
+```
+
+Freeway choices are `up`, `down`, `noop`. Its observation filters out the gray road
+and white lane markings to retain colored cars/chickens. Space Invaders supports
+`left`, `right`, `fire`, `left+fire`, `right+fire`, `noop`.
+Sprite roles are hints, not verified game state. This is an experimental policy.
+The runner uses a fixed duration, including time spent on a game-over screen; it
+does not restart automatically. There is no reliable automatic game-over detector yet.
+
+## Rewatch runs
+
+Each new run gets its own folder printed in the terminal. Open **`replay.html`**
+from that folder in a browser. It works offline and makes no new API calls.
+
+- `replay.webm`: recorded live viewport, including slow play, pauses and status.
+- `replay.html`: video controls, ¼/½/normal/double speed, previous/next decision.
+- `decisions.jsonl`: exact text state/question, Jev response/probabilities,
+  confidence, inference latency, requested/actual frames, wall/video timestamps.
+- `start.png`, `final.png`, `frame-*.png`: visual evidence.
+- `summary.json`: challenge ID, experiment settings, completeness, high-score review.
+
+Video timestamps are wall-clock offsets from browser-page recording startup;
+minor encoder/startup offsets may occur. Frame counts in logs are authoritative.
+
+## Unified score challenges
+
+Challenge identity pins **game, ROM bytes, library/core asset bytes, saved state,
+starting image, frame budget, 60 Hz convention and scoring rule**. The exact
+saved state is loaded for every run. Three neutral render frames after restoration
+are common setup, excluded from the gameplay budget. Because loadState queues a
+core command, restoration advances one callback at a time until the canonical
+serialized emulator state matches exactly (or rejects the run). Screenshots are evidence, not state identity: Atari's
+multiplexed sprites/renderer can make a single screenshot differ despite equal state.
+Frame overshoot, changed assets or mismatched starts reject a run, not silently
+weaken comparability. Fast/¼-speed fixed-policy runs were tested to produce identical
+post-action images. Scores are compared only within an identical challenge ID—never
+Space Invaders points against Freeway crossings.
+
+**The metric is player-one high score during the run. Scoring is human-confirmed
+for now.** Tesseract, if available, supplies untrusted per-decision OCR candidates
+and their maximum. An unreadable HUD is `null`, not zero. Review the replay and
+saved frames and enter the **highest observed player-one HUD score**, not a guess.
+Use `--frame` to select its screenshot (default `final.png`):
+
+```bash
+.venv/bin/python -m playjev.challenge score runs/my-run 120 --frame frame-0019.png --note "Verified highest player-one HUD score while watching replay"
+.venv/bin/python -m playjev.challenge compare runs/my-run runs/another-run
+```
+
+Only completed runs with the entire frame budget and confirmed scores are ranked.
+The score review includes the selected screenshot hash. This is a local evidence-based
+leaderboard, not a tamper-proof competition. Keep it human-confirmed until automatic
+HUD/RAM score adapters are independently validated for each ROM.
+
+No cheats, RAM writes, savestate lookahead or extra-life modifications are used.
+Restoring the challenge state is only allowed **before** the run begins. Reset is
+only used during challenge creation. During a scored run the runner executes only
+the selected controller buttons. `fixed`/`random` are explicitly labeled baselines,
+never presented as Jev. Future player plugins are trusted code, not sandboxed; review
+their implementation before accepting their scores.
+
+## Experiments
+
+The `jev-gates` Space Invaders player combines threat, dodge, firing-lane and fire
+questions with read-only six-frame laser tracking, collision-vetoed paths and timed
+alignment. It uses 12-frame decisions near low projectiles, otherwise the chosen
+action budget. The [first-wave checkpoint](ATARI-CHECKPOINT.md) documents a visible
+successful run and its exact source hashes.
+
+Space Invaders also supports `--player jev-composed`: one API call asks separate
+movement (`left/right/stay`) and trigger (`fire/release`) questions. Code combines
+the answers into ordinary controller buttons. Both judgments and their confidence
+are shown live and logged; displayed aggregate confidence is the minimum component,
+not a probability of success. This variant is an experiment, not a proven improvement.
+Run it on the same challenge as `jev` to compare high scores fairly:
+
+```bash
+.venv/bin/python -m playjev.challenge run challenges/invaders-10s --player jev-composed --visible --speed 0.25 --action-frames 30
+```
+
+```bash
+.venv/bin/python -m playjev.challenge experiment challenges/invaders-10s experiments/atari-example.json --out runs/invaders-experiment --visible
+```
+
+The JSON list varies `player` (`jev`, `fixed`, `random`), `observation` (`regions`,
+`compact`, `single`), `action_frames`, `model`, `seed`, and `question` (a text-file
+path relative to the experiment JSON). The example makes 120 API calls for a 10s
+challenge. All variants use the same initial state and frame budget. Confirm their
+scores, then `compare` their folders. Different action durations intentionally
+change policy opportunity/call budgets; recorded settings make that tradeoff visible.
+
+## Add more players/games
+
+In `playjev/challenge.py`:
+
+- Subclass `Player`, implementing async `decide(state, game)` returning
+  `choice`, `confidence` and optional evidence. Supply the instance to `run(args, player)`.
+  Do not advance the emulator inside a policy.
+- Subclass `GameAdapter`, define ROM, goal, actions, observation and HUD crop,
+  then register it in `GAMES`. State creation, validation, recording, slow watching,
+  budgets, experiment orchestration and comparison remain shared.
+
+Use the same challenge files for future players (including a future Ollaya player).
+No Ollaya/local model is installed or used by this implementation.

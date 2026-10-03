@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Jev Atari</title>
+<style>html,body{width:100%;height:100%;margin:0;background:black}
+#game{width:100%;height:92%}.ejs_menu_bar{display:none!important}
+#status{height:8%;color:white;font:14px monospace;padding:4px;box-sizing:border-box}</style>
+<div id="game"></div>
+<div id="status">Loading EmulatorJS…</div>
+<script>
+window.EJS_player = '#game';
+window.EJS_core = 'atari2600';
+window.EJS_gameUrl = '/rom.a26';
+window.EJS_pathtodata = '/data/';
+window.EJS_startOnLoaded = true;
+window.EJS_DEBUG_XX = true;
+window.EJS_threads = false;
+window.EJS_volume = 0;
+window.EJS_askBeforeExit = false;
+window.EJS_disableLocalStorage = true;
+window.EJS_onGameStart = () => { EJS_emulator.pause(); window.started = true; };
+</script><script src="/data/loader.js"></script></html>

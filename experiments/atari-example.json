@@ -1,0 +1,5 @@
+[
+  {"name": "fixed-baseline", "player": "fixed", "action_frames": 6},
+  {"name": "jev-regions", "player": "jev", "observation": "regions", "action_frames": 6},
+  {"name": "jev-compact-long-actions", "player": "jev", "observation": "compact", "action_frames": 30}
+]
