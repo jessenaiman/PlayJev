@@ -23,7 +23,13 @@ window.drawTracking = observation => {
     ctx.font='12px monospace';
     for(const [role,items,color] of [['alien',observation.aliens||[],'#ffcc44'],['player',observation.player?[observation.player]:[],'#44ff88'],['laser',observation.projectiles||[],'#55ccff']]){
         ctx.strokeStyle=color;ctx.fillStyle=color;
-        for(const item of items){const [x,y,x2,y2]=item.box;ctx.strokeRect(x*sx,y*sy,(x2-x+1)*sx,(y2-y+1)*sy);ctx.fillText(role,x*sx,y*sy-3);}
+        for(const item of items){const [x,y,x2,y2]=item.box;ctx.strokeRect(x*sx,y*sy,(x2-x+1)*sx,(y2-y+1)*sy);ctx.fillText(observation.labels?.[role]||role,x*sx,y*sy-3);}
+    }
+    ctx.strokeStyle='#ee88ff';
+    for(const target of observation.targets||[]){const [x,y,x2,y2]=target.box;ctx.strokeRect(x*sx,y*sy,(x2-x+1)*sx,(y2-y+1)*sy);}
+    for(const bug of observation.bug_tracks||[]){
+        if(bug.vy==null)continue;ctx.strokeStyle='#ffaa44';ctx.setLineDash([4,4]);
+        ctx.beginPath();ctx.moveTo(bug.x*sx,bug.y*sy);ctx.lineTo((bug.x+(bug.vx||0)*30)*sx,(bug.y+bug.vy*30)*sy);ctx.stroke();ctx.setLineDash([]);
     }
     for(const laser of observation.projectile_motion||[]){
         if(laser.vy==null)continue;

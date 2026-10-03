@@ -1,4 +1,4 @@
-"""Continuous Space Invaders, one pending Jev request; Start/Stop in browser."""
+"""Continuous Atari adapters, one pending Jev request; Start/Stop in browser."""
 import argparse
 import asyncio
 import json
@@ -12,8 +12,14 @@ from .hud import collect
 
 async def play(args):
     metadata = json.loads((args.challenge/'challenge.json').read_text())
-    if metadata['game']!='space-invaders':
-        raise ValueError('Continuous tracking currently supports Space Invaders')
+    if metadata['game'] not in ('space-invaders','crackpots'):
+        raise ValueError('Continuous tracking supports Space Invaders and Crackpots')
+    game=GAMES[metadata['game']]
+    crackpots=game.id=='crackpots'
+    if crackpots:
+        from .crackpots import geometry as observe_game, tracks, guard, overlay, CrackpotsPlayer
+    else:
+        observe_game=geometry
     rom, assets = Path(metadata['rom_path']), Path(metadata['assets_path'])
     from .challenge import asset_digest
     snapshot=(args.challenge/'start.state').read_bytes()
@@ -21,16 +27,21 @@ async def play(args):
         raise ValueError('Challenge bytes changed')
     load_dotenv(ROOT.parent/'.env',override=False)
     args.out.mkdir(parents=True,exist_ok=False)
-    player=GatedJevPlayer()
+    player=CrackpotsPlayer() if crackpots else GatedJevPlayer()
     pending=None
     records=[]
     elapsed=0
     terminal_samples=0
     sample=0
-    summary={'schema':'jev-live-v1','game':'space-invaders','challenge_id':metadata['challenge_id'],
+    summary={'schema':'jev-live-v1','game':game.id,'challenge_id':metadata['challenge_id'],
              'status':'incomplete','score':None,'score_verified':False,'budget_frames':None,
              'config':{'player':'jev-gates','model':'jev-latest','policy_version':'continuous-compact-v1'},
-             'playback_mode':'continuous','game_completed':False}
+              'playback_mode':'continuous','game_completed':False}
+    if crackpots:
+        summary['config']['policy_version']='crackpots-interception-v2'
+        summary['terminal_detection']='not-yet-validated; use Stop & save'
+    summary['config']['source_sha256']={name:digest((ROOT/'playjev'/name).read_bytes())
+        for name in ('live.py','hud.py', 'crackpots.py' if crackpots else 'invaders.py')}
     async with EmulatorSession(assets,rom,True,args.out/'video',1) as env:
         async def raw_capture():
             # DOM overlays are for the viewer, never input to perception/OCR.
@@ -67,12 +78,13 @@ async def play(args):
                     };tick();
                 };
             }''')
+            await env.page.evaluate('game=>{document.title="Jev Atari — "+game;}',game.id)
             print('Browser ready. Click Start Jev; Stop & save ends this single attempt.',flush=True)
             if args.autostart:
                 await env.page.get_by_role('button',name='Start Jev',exact=True).click()
             await env.page.wait_for_function('window.liveRunning || window.liveStopped',timeout=0)
             origin=await env.page.evaluate('EJS_emulator.gameManager.getFrameNum()')
-            previous=geometry(initial)
+            previous=observe_game(initial)
             previous_frame=origin
             started=time.monotonic()
             log=(args.out/'decisions.jsonl').open('w')
@@ -81,12 +93,15 @@ async def play(args):
                     number=await env.page.evaluate('EJS_emulator.gameManager.getFrameNum()')
                     elapsed=number-origin
                     frame=await raw_capture()
-                    current=geometry(frame)
-                    current['projectile_motion']=motion(previous,current, max(1,number-previous_frame))
-                    await env.page.evaluate('o=>window.drawTracking(o)',current)
+                    current=observe_game(frame)
+                    if crackpots:
+                        current['bug_tracks']=tracks(previous,current,max(1,number-previous_frame))
+                    else:
+                        current['projectile_motion']=motion(previous,current, max(1,number-previous_frame))
+                    await env.page.evaluate('o=>window.drawTracking(o)',overlay(current) if crackpots else current)
                     # Three consecutive non-black observations, never a missing
                     # player sprite, are a stop candidate; not a verified death.
-                    terminal_samples=terminal_samples+1 if not current['background_black'] else 0
+                    terminal_samples=terminal_samples+1 if not crackpots and not current['background_black'] else 0
                     if terminal_samples>=3:
                         summary['game_over_candidate']={'game_frame':elapsed,'reason':'three-background-color-observations','verified':False}
                         summary['stop_reason']='suspected-game-over'
@@ -98,34 +113,43 @@ async def play(args):
                     if pending and pending.done():
                         decision=pending.result()
                         age=elapsed-request_frame
-                        applied=age<=60 and not current['life_indicator_visible']
+                        applied=age<=60 and not current.get('life_indicator_visible',False)
                         choice=decision['choice']
+                        if crackpots and current['player'] and decision.get('target_x') is not None:
+                            latest_x=(current['player']['box'][0]+current['player']['box'][2])/2
+                            error=decision['target_x']-latest_x
+                            direction='left' if error<-3 else 'right' if error>3 else ''
+                            fire=decision['components']['drop']['choice']=='fire'
+                            choice='+'.join(([direction] if direction else [])+(['fire'] if fire else [])) or 'noop'
+                            decision['executed_choice']=choice
+                            decision['movement_frames']=min(26,max(1,round(abs(error)/0.7))) if direction else 30
                         # Revalidate motion against the latest geometry. These
                         # are observed-state predictions, not savestate rollouts.
                         px=(current['player']['box'][0]+current['player']['box'][2])/2 if current['player'] else None
                         direction='left' if choice.startswith('left') else 'right' if choice.startswith('right') else 'stay'
                         speed={'left':-0.5,'right':0.5,'stay':0}[direction]
                         veto=px is None or (direction=='left' and px<=14) or (direction=='right' and px>=146)
-                        for laser in current['projectile_motion']:
+                        for laser in current.get('projectile_motion',[]):
                             if laser['direction']=='up':continue
                             vy=laser['vy'] if laser['direction']=='down' else 0.4
                             impact=max(0,(183-laser['y'])/vy) if vy and vy>0 else float('inf')
                             future=max(12,min(148,px+speed*min(impact,18))) if px is not None else None
                             if impact<=42 and future is not None and abs(future-laser['x'])<=6:veto=True
+                        if crackpots:veto=guard(current,choice)
                         if veto or px is None:
                             applied=False
                         if applied:
-                            await env.page.evaluate('window.applyLive',{'buttons':GAMES['space-invaders'].actions[choice],
-                                'rest':GAMES['space-invaders'].actions.get(decision.get('rest_choice','noop'),[]),
+                            await env.page.evaluate('window.applyLive',{'buttons':game.actions[choice],
+                                'rest':game.actions.get(decision.get('rest_choice','noop'),[]),
                                 'frames':min(30,decision.get('movement_frames',30))})
                         record={'step':len(records),'game_frame':request_frame,'applied_at_frame':elapsed,
-                                'age_frames':age,'applied':applied,'collision_veto':veto,'decision':decision,
+                                'age_frames':age,'applied':applied,'collision_veto':veto,'executed_choice':choice,'decision':decision,
                                 'video_time_s':request_video,'action_video_time_s':time.monotonic()-env.started_wall}
                         records.append(record);log.write(json.dumps(record)+'\n');log.flush()
                         pending=None
                     if pending is None:
                         request_frame=elapsed;request_video=time.monotonic()-env.started_wall
-                        pending=asyncio.create_task(player.decide(state,GAMES['space-invaders']))
+                        pending=asyncio.create_task(player.decide(state,game))
                     (args.out/f'frame-{sample:04}.png').write_bytes(frame)
                     sample+=1
                     previous,previous_frame=current,number
@@ -147,7 +171,11 @@ async def play(args):
     if videos:videos[0].rename(args.out/'replay.webm')
     from .challenge import replay_html
     replay_html(args.out,summary,records)
-    await collect(args.out)
+    if crackpots:
+        from .crackpots_score import collect as collect_crackpots
+        await collect_crackpots(args.out)
+    else:
+        await collect(args.out)
 
 
 if __name__=='__main__':

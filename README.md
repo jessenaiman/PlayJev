@@ -88,6 +88,8 @@ a [verified first-wave checkpoint](docs/ATARI-CHECKPOINT.md) and evidence-linked
 
 For continuous Start/Stop gameplay, predictive overlays, and automated Jev HUD
 reading, see the [JevPilot source review and Atari adaptation](docs/JEVPILOT-RESEARCH.md).
+The new [Crackpots adapter](docs/CRACKPOTS.md) adds climbing-bug interception and
+timed pot releases; it is not one of the existing HTML games.
 
 The model plays a game, one command:
 

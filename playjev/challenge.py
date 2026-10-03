@@ -124,7 +124,20 @@ class Defender(GameAdapter):
         return defender_geometry(frame)
 
 
-GAMES = {g.id: g() for g in (SpaceInvaders, Freeway, Defender)}
+class Crackpots(GameAdapter):
+    id = "crackpots"
+    rom_name = "Crackpots (NA).a26"
+    goal = "Drop flowerpots onto climbing bugs; protect the building and maximize player-one score."
+    actions = SpaceInvaders.actions
+    hints = "Gardener moves left/right on the roof. Fire drops a pot only when standing behind it. Bugs climb toward six windows; bug colors change their trajectories."
+    score_crop = (0.10,0.038,0.70,0.095)
+
+    def observation(self, frame, mode):
+        from .crackpots import geometry as crackpots_geometry
+        return crackpots_geometry(frame)
+
+
+GAMES = {g.id: g() for g in (SpaceInvaders, Freeway, Defender, Crackpots)}
 
 
 class Player(ABC):
@@ -538,6 +551,9 @@ async def run(args, player=None):
     if player is None and hosted and not os.environ.get("TYPESAFE_API_KEY"):
         raise ValueError("TYPESAFE_API_KEY is required")
     question = args.question.read_text() if args.question else None
+    if args.player=='jev-gates' and game.id=='crackpots':
+        from .crackpots import CrackpotsPlayer
+        player=player or CrackpotsPlayer(question,args.model)
     player = player or (OllayaGatedPlayer(question,args.model,getattr(args,"ollaya_url","http://127.0.0.1:11435")) if args.player == "ollaya-gates" else
                         DefenderJevPlayer(question,args.model) if args.player == "jev-gates" and game.id == "defender" else
                         GatedJevPlayer(question, args.model) if args.player == "jev-gates" else

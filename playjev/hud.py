@@ -46,21 +46,21 @@ def digit_grids(frame):
     return grids
 
 
-def request_for(grids):
-    distances=[{digit:sum(a!=b for row,example in zip(grid,pattern) for a,b in zip(row,example)) for digit,pattern in FONT.items()} for grid in grids]
-    state = {'glyphs':grids,'examples':FONT,'pixel_mismatch_counts':distances,'legend':'# = lit green player-one HUD pixel; . = background. Each glyph is 3 columns by 5 rows, left to right. Blank glyphs are leading spaces. Mismatch counts are exact cell comparisons, not model predictions; zero is an exact match.'}
-    criteria = {**{k:'Digit '+k for k in FONT},'blank':'All cells dark, leading space','unknown':'Damaged, ambiguous or not a numeral'}
+def request_for(grids, font=FONT):
+    distances=[{digit:sum(a!=b for row,example in zip(grid,pattern) for a,b in zip(row,example)) for digit,pattern in font.items()} for grid in grids]
+    state = {'glyphs':grids,'examples':font,'pixel_mismatch_counts':distances,'legend':'# = observed score foreground pixel; . = background. Each glyph is a row-major text grid, left to right. Blank glyphs are leading spaces. Mismatch counts are exact cell comparisons, not model predictions; zero is an exact match.'}
+    criteria = {**{k:'Digit '+k for k in font},'blank':'All cells dark, leading space','unknown':'Damaged, ambiguous or not a numeral'}
     questions = {f'digit_{i}':{'type':'choice','instructions':f'Read only `glyphs[{i}]` and `pixel_mismatch_counts[{i}]`. Select the unique digit with zero mismatches, blank if all cells are dark, or unknown if no exact template matches. Do not choose a nonzero mismatch or infer from gameplay.','criteria':criteria} for i in range(len(grids))}
     return {'model':'jev-latest','state':state,'questions':questions}
 
 
-def assemble(grids, result):
+def assemble(grids, result, font=FONT):
     from .challenge import JevPlayer
-    answers = [JevPlayer.validate_choice(result['answers'][f'digit_{i}'],request_for(grids)['questions'][f'digit_{i}']['criteria']) for i in range(4)]
+    answers = [JevPlayer.validate_choice(result['answers'][f'digit_{i}'],request_for(grids,font)['questions'][f'digit_{i}']['criteria']) for i in range(len(grids))]
     digits = [a['choice'] for a in answers]
     # Exact pixel agreement gates acceptance; model confidence is not evidence.
-    valid = all((d in FONT and grids[i]==FONT[d]) or
-                (d=='blank' and all(row=='...' for row in grids[i])) for i,d in enumerate(digits))
+    valid = all((d in font and grids[i]==font[d]) or
+                (d=='blank' and all(set(row)=={'.'} for row in grids[i])) for i,d in enumerate(digits))
     text = ''.join(' ' if d=='blank' else d for d in digits)
     valid = valid and text.strip().isdigit() and ' ' not in text.strip()
     return {'value':int(text.strip()) if valid else None,'accepted':valid,'digits':digits,'answers':answers}
@@ -72,23 +72,34 @@ async def collect(directory):
     load_dotenv(ROOT.parent/'.env',override=False)
     directory = Path(directory)
     summary = json.loads((directory/'summary.json').read_text())
-    if summary['game']!='space-invaders':
-        raise ValueError('HUD layout currently supports Space Invaders only')
+    if summary['game']=='space-invaders':
+        extractor,font=digit_grids,FONT
+    elif summary['game']=='crackpots':
+        from .crackpots_score import digit_grids as extractor, FONT as font
+    else:
+        raise ValueError('HUD layout supports Space Invaders and Crackpots')
     cache, observations = {}, []
     player = JevPlayer()
     files = sorted(directory.glob('frame-*.png')) + [directory/'final.png']
-    unique = list({tuple(g) for file in files for g in digit_grids(file.read_bytes())})
-    body=request_for([list(g) for g in unique])
-    result=await player.request(body)
+    all_glyphs = {tuple(g) for file in files for g in extractor(file.read_bytes())}
+    blank_glyphs = {g for g in all_glyphs if all(set(row)=={'.'} for row in g)}
+    unique = sorted(all_glyphs-blank_glyphs)
+    body=request_for([list(g) for g in unique],font)
+    result=await player.request(body) if unique else {'answers':{},'usage':{'input_tokens':0,'output_tokens':0}}
     glyph_answers={g:result['answers'][f'digit_{i}'] for i,g in enumerate(unique)}
+    options={**{k:'Digit '+k for k in font},'blank':'Leading space','unknown':'Unknown'}
+    for g in blank_glyphs:
+        glyph_answers[g]={'type':'choice','choice':'blank','confidence':1,
+                          'probabilities':{k:float(k=='blank') for k in options},
+                          'source':'deterministic-all-dark-pixels; no model judgment'}
     # Reuse identical glyph decisions rather than infer on every screenshot.
     for file in files:
         frame = file.read_bytes()
-        grids = digit_grids(frame)
+        grids = extractor(frame)
         key = json.dumps(grids)
         if key not in cache:
             assembled={'answers':{f'digit_{i}':glyph_answers[tuple(g)] for i,g in enumerate(grids)}}
-            cache[key] = {**assemble(grids,assembled)}
+            cache[key] = {**assemble(grids,assembled,font)}
         observations.append({'evidence':file.name,'sha256':digest(frame),**cache[key]})
     accepted = [r for r in observations if r['accepted']]
     visible = [r for r in observations if any(d!='blank' for d in r['digits'])]
@@ -97,7 +108,7 @@ async def collect(directory):
                  ((i>0 and observations[i-1]['value']==r['value']) or
                   (i+1<len(observations) and observations[i+1]['value']==r['value']))]
     best = max(supported,key=lambda r:r['value'],default=None)
-    report = {'schema':'jev-hud-v1','unique_requests':1,'unique_glyphs':len(unique),'request':body,'response':result,'observations':observations,
+    report = {'schema':'jev-hud-v1','unique_requests':int(bool(unique)),'unique_glyphs':len(unique),'resolved_blank_glyphs':len(blank_glyphs),'request':body,'response':result,'observations':observations,
               'accepted_frames':len(accepted),'highest_supported_score':best['value'] if best else None,
               'visible_hud_frames':len(visible),
               'note':'Jev digit choices checked against literal glyph templates and repeated HUD evidence. Not human confirmation; not a game-over judgment.'}
