@@ -7,7 +7,8 @@ from argparse import Namespace
 from pathlib import Path
 
 from PIL import Image
-from playjev.challenge import BaselinePlayer, ComposedJevPlayer, GatedJevPlayer, Freeway, GAMES, compare, replay_html, validate_run
+from playjev.challenge import BaselinePlayer, ComposedJevPlayer, GatedJevPlayer, DefenderJevPlayer, Freeway, GAMES, compare, replay_html, validate_run
+from playjev.scoreboard import build, eligible
 from playjev.invaders import geometry, motion
 
 
@@ -80,7 +81,7 @@ class ChallengeTests(unittest.TestCase):
             asyncio.run(ComposedJevPlayer().decide({}, GAMES["freeway"]))
 
     def test_actions(self):
-        self.assertEqual(set(GAMES), {"space-invaders", "freeway"})
+        self.assertEqual(set(GAMES), {"space-invaders", "freeway", "defender"})
         for game in GAMES.values():
             decision = asyncio.run(BaselinePlayer("fixed").decide({}, game))
             self.assertIn(decision["choice"], game.actions)
@@ -100,6 +101,38 @@ class ChallengeTests(unittest.TestCase):
         for count in (0, 61, 1.5):
             with self.assertRaises(ValueError):
                 validate_run(Namespace(player="jev", observation="regions", action_frames=count, speed=0.25, watch_delay=0))
+
+    def test_defender_reuses_gate_contract(self):
+        from unittest.mock import AsyncMock
+        game = GAMES["defender"]
+        player = DefenderJevPlayer()
+        player.request = AsyncMock(return_value={"answers":{
+            "movement":{"choice":"up-right","confidence":0.9,"probabilities":{k:float(k=="up-right") for k in ["stay",*game.directions]}},
+            "trigger":{"choice":"fire","confidence":1,"probabilities":{"fire":1,"release":0}}
+        }})
+        d = asyncio.run(player.decide({},game))
+        self.assertEqual(d["choice"],"up-right+fire")
+        self.assertEqual(game.actions[d["choice"]],[4,7,0])
+
+    def test_scoreboard_requires_unchanged_evidence_and_separates_games(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            paths=[]
+            for game in ("defender","space-invaders"):
+                p=Path(tmp)/game
+                p.mkdir()
+                (p/"final.png").write_bytes(b"evidence")
+                row=dict(game=game,challenge_id=game,status="complete",game_frames=60,budget_frames=60,
+                         score=100,score_verified=True,score_review={"evidence":"final.png","evidence_sha256":hashlib.sha256(b"evidence").hexdigest()},config={"player":"jev-gates"})
+                (p/"summary.json").write_text(json.dumps(row))
+                self.assertTrue(eligible(p,row))
+                paths.append(p)
+            output=Path(tmp)/"board"
+            build(paths,output)
+            groups=json.loads((output/"scores.json").read_text())
+            self.assertEqual(len(groups),2)
+            (paths[-1]/"final.png").write_bytes(b"changed")
+            self.assertFalse(eligible(paths[-1],row))
 
     def test_offline_replay_escapes_scripts(self):
         with tempfile.TemporaryDirectory() as tmp:

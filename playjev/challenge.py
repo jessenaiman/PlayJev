@@ -24,6 +24,7 @@ from playwright.async_api import async_playwright
 
 from .atari import ROOT, Server, observe
 from .invaders import geometry, motion
+from .defender import geometry as defender_geometry
 
 ASSETS = ROOT.parent / "EmulatorJS/node_modules/@emulatorjs/emulatorjs/data"
 ROMS = Path.home() / "Games/roms/Atari 2600 Champion Collection"
@@ -108,7 +109,21 @@ class Freeway(GameAdapter):
         return result
 
 
-GAMES = {g.id: g() for g in (SpaceInvaders, Freeway)}
+class Defender(GameAdapter):
+    id = "defender"
+    rom_name = "Defender (NA).a26"
+    goal = "Maximize player-one Defender high score: shoot hostile ships, avoid enemy missiles/mines, and protect/rescue humanoids."
+    directions = {"left":[6], "right":[7], "up":[4], "down":[5],
+                  "up-left":[4,6], "up-right":[4,7], "down-left":[5,6], "down-right":[5,7]}
+    actions = {"noop":[], "fire":[0], **directions, **{k+"+fire":v+[0] for k,v in directions.items()}}
+    hints = "Horizontal scrolling shooter. Joystick moves in eight directions; fire shoots in the facing direction."
+    score_crop = (0.32,0.83,0.68,0.90)
+
+    def observation(self, frame, mode):
+        return defender_geometry(frame)
+
+
+GAMES = {g.id: g() for g in (SpaceInvaders, Freeway, Defender)}
 
 
 class Player(ABC):
@@ -245,7 +260,6 @@ class GatedJevPlayer(JevPlayer):
                       "alien_velocity_x_per_frame": self.velocity, "targets": candidates,
                       "screen_bounds": [12, 148], "previous_action": state.get("previous_action"),
                       "lead_estimate": "shot speed approx 2.5 y pixels/frame, capped 12 x pixels; inference only"}}
-        direction_options = {"left": "Move left", "right": "Move right", "stay": "Do not move horizontally"}
         questions = {
             "threat": {"type": "choice", "instructions": "Is a descending enemy projectile likely to hit player one during the next action_frames? Use control.projectile_tracks and immediate_threat. Tracks are measured over nearby frames: down is an enemy bomb, up is our shot. threatens_staying=true means dodge now. Consider untracked low projectiles near the player too. Do not treat upward shots or distant bullets as threats.",
                        "criteria": {"danger": "An approaching descending projectile near the player's x threatens impact soon", "safe": "No immediate evidence of impact; continue targeting aliens"}},
@@ -290,6 +304,28 @@ class GatedJevPlayer(JevPlayer):
                 "rest_choice": "fire" if fire else "noop", "guard": guard,
                 "safety_gate":danger,
                 "target_x": target["aim_x"] if target else None}
+
+
+class DefenderJevPlayer(JevPlayer):
+    """Same gate composition, Defender's two-dimensional joystick instead of a servo."""
+    async def decide(self, state, game):
+        if self.question:
+            raise ValueError("Defender gates use their recorded component questions, not --question")
+        directions = {"stay":"Keep position", **{k:"Move "+k.replace("-"," and ") for k in game.directions}}
+        questions = {
+            "movement": {"type":"choice", "instructions":"Which joystick direction should the Defender ship take next? Use current and previous colored regions to infer the player's position and missiles. Dodge incoming fire, otherwise align vertically with hostile ships and fly toward them. Keep moving to avoid pursuit. The upper radar and lower city are not enemy ships. Stay if the player is not observable during a respawn.", "criteria":directions},
+            "trigger": {"type":"choice", "instructions":"Should Defender fire now? Fire starts the initial game if no ship has appeared yet. Once active, fire when facing enemies in the main playfield. Firing below the city consumes a limited smart bomb; firing behind the upper scanner triggers hyperspace. Avoid those unless escape or clearing many nearby threats warrants it. Humanoids are immune to our missiles in this Atari version.",
+                        "criteria":{"fire":"Hold fire to shoot or deliberately use the normal in-game escape/bomb mechanic", "release":"Release fire to conserve bombs or avoid unnecessary hyperspace"}}
+        }
+        body = {"model":self.model,"state":state,"questions":questions}
+        result = await self.request(body)
+        gates = {k:self.validate_choice(result["answers"][k],q["criteria"]) for k,q in questions.items()}
+        direction = gates["movement"]["choice"]
+        parts = ([] if direction=="stay" else [direction]) + (["fire"] if gates["trigger"]["choice"]=="fire" else [])
+        choice = "+".join(parts) or "noop"
+        return {"request":body,"response":result,"components":gates,"choice":choice,
+                "confidence":min(g["confidence"] for g in gates.values()),
+                "composition":"Defender-2D-movement+independent-trigger-v1"}
 
 
 class BaselinePlayer(Player):
@@ -437,7 +473,7 @@ const video=document.getElementById('video'), info=document.getElementById('info
 document.getElementById('meta').textContent=JSON.stringify(data.summary,null,2);
 document.getElementById('speed').onchange=e=>video.playbackRate=Number(e.target.value);
 function index(){let i=0;data.records.forEach((r,j)=>{if(r.video_time_s<=video.currentTime)i=j});return i}
-video.ontimeupdate=()=>{const r=data.records[index()];info.textContent=r?JSON.stringify({step:r.step,game_time_s:r.game_frame/60,action:r.decision.choice,confidence:r.decision.confidence,inference_s:r.latency_s,frames:r.frames},null,2):'No decisions recorded'};
+video.ontimeupdate=()=>{const r=data.records[index()];info.textContent=r?JSON.stringify({step:r.step,game_time_s:r.game_frame/60,action:r.decision.choice,confidence:r.decision.confidence,gates:r.decision.components,guard:r.decision.guard,terminal_hold:r.decision.terminal_hold,executed_segments:r.executed_segments,inference_s:r.latency_s,frames:r.frames},null,2):'No decisions recorded'};
 for(const [id,d] of [['prev',-1],['next',1]]) document.getElementById(id).onclick=()=>{const i=Math.max(0,Math.min(data.records.length-1,index()+d));if(data.records[i])video.currentTime=data.records[i].video_time_s};
 video.onloadedmetadata=()=>{if(data.records.length)video.currentTime=data.records[0].video_time_s};
 </script>""")
@@ -458,18 +494,21 @@ async def run(args, player=None):
     if player is None and hosted and not os.environ.get("TYPESAFE_API_KEY"):
         raise ValueError("TYPESAFE_API_KEY is required")
     question = args.question.read_text() if args.question else None
-    player = player or (GatedJevPlayer(question, args.model) if args.player == "jev-gates" else
+    player = player or (DefenderJevPlayer(question,args.model) if args.player == "jev-gates" and game.id == "defender" else
+                        GatedJevPlayer(question, args.model) if args.player == "jev-gates" else
                         ComposedJevPlayer(question, args.model) if args.player == "jev-composed" else
                         JevPlayer(question, args.model) if hosted else BaselinePlayer(args.player, args.seed))
     out = args.out or ROOT / "runs/challenges" / f"{metadata['game']}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{os.urandom(3).hex()}"
     out.mkdir(parents=True, exist_ok=False)
     config = {"player": args.player, "player_class": type(player).__name__, "model": args.model if hosted else None, "observation": args.observation,
               "question": question, "action_frames": args.action_frames, "speed": args.speed, "watch_delay": args.watch_delay, "seed": args.seed}
+    config["source_sha256"] = {name:digest((ROOT/"playjev"/name).read_bytes()) for name in ("challenge.py","invaders.py","defender.py")}
     summary = {"schema": SCHEMA, "challenge_id": metadata["challenge_id"], "game": game.id,
                "budget_frames": metadata["budget_frames"], "config": config, "status": "incomplete", "score": None,
                "metric": "highest-observed-player-one-hud-score",
                "score_candidate": None, "score_verified": False, "game_frames": 0, "decisions": 0}
     records, previous, elapsed = [], None, 0
+    terminal = False
     recent_motion = []
     min_aliens = None
     try:
@@ -499,7 +538,8 @@ async def run(args, player=None):
                     await env.page.locator("#status").evaluate("(el,text)=>el.textContent=text", f"{args.player} | {elapsed/60:.2f}s | choosing…")
                     wall = time.monotonic() - env.started_wall
                     t0 = time.monotonic()
-                    decision = await player.decide(state, game)
+                    decision = ({"choice":"noop","confidence":None,"terminal_hold":"Observed game-over color cycle; no fire/restart allowed"}
+                                if terminal else await player.decide(state, game))
                     latency = time.monotonic() - t0
                     record = {"step": len(records), "game_frame": elapsed, "frames": count, "video_time_s": wall,
                               "latency_s": latency, "state": state, "decision": decision}
@@ -520,17 +560,25 @@ async def run(args, player=None):
                         while duration:
                             chunk = min(6, duration)
                             before_image = frame
-                            actual += await env.frames(game.actions[selected], chunk)
+                            executed = "noop" if terminal else selected
+                            actual += await env.frames(game.actions[executed], chunk)
                             frame = await env.capture()
                             if game.id == "space-invaders":
                                 recent_motion = motion(geometry(before_image), geometry(frame), chunk)
-                            record["executed_segments"].append({"choice":selected,"frames":chunk})
+                            elif game.id == "defender" and not defender_geometry(frame)["background_black"] and not terminal:
+                                terminal = True
+                                summary["game_over_candidate"] = {"step":len(records),"game_frame":elapsed+actual,"reason":"background-color-cycle"}
+                                (out/"game-over.png").write_bytes(frame)
+                            record["executed_segments"].append({"choice":executed,"frames":chunk})
                             duration -= chunk
                     record["actual_frames"] = actual
                     elapsed += count
                     frame = await env.capture()
                     (out / f"frame-{len(records):04}.png").write_bytes(frame)
                     record["after_frame_sha256"] = digest(frame)
+                    if game.id == "defender" and not defender_geometry(frame)["background_black"] and not terminal:
+                        terminal = True
+                        summary["game_over_candidate"] = {"step":len(records),"game_frame":elapsed,"reason":"background-color-cycle"}
                     if game.id == "space-invaders":
                         after = geometry(frame)
                         n = after["alien_count"]
@@ -553,7 +601,7 @@ async def run(args, player=None):
                     log.flush()
                     previous = current
                     print(f"{elapsed/60:.2f}s / {metadata['budget_frames']/60:.2f}s: {decision['choice']} confidence={decision['confidence']}", flush=True)
-                    if summary.get("game_over_candidate"):
+                    if summary.get("game_over_candidate") and game.id != "defender":
                         break
             (out / "final.png").write_bytes(frame)
             summary["status"] = "complete" if elapsed == metadata["budget_frames"] else "terminated"
@@ -562,6 +610,7 @@ async def run(args, player=None):
         raise
     finally:
         summary.update(game_frames=elapsed, decisions=len(records))
+        summary["api_requests"] = sum("request" in r["decision"] for r in records)
         videos = list((out / "video").glob("*.webm"))
         if videos:
             videos[0].rename(out / "replay.webm")
@@ -579,7 +628,7 @@ def confirm_score(args):
     if summary["status"] != "complete":
         raise ValueError("Only completed runs may be scored")
     summary.update(score=args.value, score_verified=True,
-                   score_review={"method": "human-confirmed-high-score-hud", "note": args.note,
+                   score_review={"method": "reviewed-high-score-hud", "reviewer": args.reviewer, "note": args.note,
                                  "evidence": args.frame, "evidence_sha256": digest(evidence.read_bytes()),
                                  "at": datetime.now(timezone.utc).isoformat()})
     file.write_text(json.dumps(summary, indent=2))
@@ -670,8 +719,12 @@ def cli():
     s.add_argument("value", type=int)
     s.add_argument("--note", required=True)
     s.add_argument("--frame", default="final.png", help="Saved PNG showing the highest observed score")
+    s.add_argument("--reviewer", choices=("human","assistant"), default="human")
     co = sub.add_parser("compare", help="Rank confirmed scores only within matching challenges")
     co.add_argument("runs", nargs="+", type=Path)
+    board = sub.add_parser("leaderboard", help="Build local high-score board with evidence links")
+    board.add_argument("runs", nargs="*", type=Path, help="Default: discover all run summaries under runs/")
+    board.add_argument("--out", type=Path, default=ROOT/"runs/scoreboard")
     a = p.parse_args()
     if a.command == "create":
         if not math.isfinite(a.seconds) or not 1 <= a.seconds <= 120:
@@ -686,6 +739,9 @@ def cli():
         if a.value < 0:
             p.error("score must be nonnegative")
         confirm_score(a)
+    elif a.command == "leaderboard":
+        from .scoreboard import build
+        build(a.runs or [p.parent for p in (ROOT/"runs").rglob("summary.json")], a.out)
     else:
         compare(a)
 

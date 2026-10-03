@@ -80,10 +80,11 @@ cost, and this release leaves that off. The prompt is built in
 
 ### Atari through EmulatorJS + hosted TypeSafe Jev
 
-The added [Atari challenge runner](docs/ATARI.md) supports **Space Invaders and Freeway**,
+The added [Atari challenge runner](docs/ATARI.md) supports **Space Invaders, Freeway and Defender**,
 slow live watching, recorded replays, saved-state/frame-budget challenges, and experiments.
 It uses the existing TypeSafe API key and text observations—no local model. This is a
-separate experimental adapter, not the trained pixel policy described below.
+separate experimental adapter, not the trained pixel policy described below. It has
+a [verified first-wave checkpoint](docs/ATARI-CHECKPOINT.md) and evidence-linked high-score board.
 
 The model plays a game, one command:
 

@@ -5,7 +5,7 @@ not screenshots (the official Jev API is text-only). No local model or native em
 is needed. This adapts PlayJev's observe/choose/execute loop; it is not its trained
 pixel policy, and comparable game performance has not been established.
 
-Games: **Space Invaders** and **Freeway** (player one). Use your own ROMs.
+Games: **Space Invaders**, **Freeway**, and **Defender** (player one). Use your own ROMs.
 The existing parent `.env` supplies `TYPESAFE_API_KEY`; the key stays in Python,
 never browser JavaScript, logs, videos or metadata.
 
@@ -72,6 +72,47 @@ from that folder in a browser. It works offline and makes no new API calls.
 Video timestamps are wall-clock offsets from browser-page recording startup;
 minor encoder/startup offsets may occur. Frame counts in logs are authoritative.
 
+## Defender: test the shared runner with a scrolling shooter
+
+```bash
+.venv/bin/python -m playjev.challenge create defender challenges/defender-30s --seconds 30
+.venv/bin/python -m playjev.challenge run challenges/defender-30s --player jev-gates --visible --speed 0.5 --action-frames 30
+```
+
+Defender reuses the same saved-state validation, frame budgets, recording, experiment
+and scoring code. Its adapter observes colored sprites and the scanner, and its
+policy combines an eight-direction movement judgment with an independent fire gate.
+It does not claim Space Invaders' ROM-specific laser detector works unchanged here.
+
+Defender uses normal joystick mechanics for smart bombs (fire below the city) and
+hyperspace (fire above the playfield), not cheats. Pressing fire after game over can
+restart the game, so the runner observes the background-color cycle every six frames
+and releases all controls for the rest of the fixed budget. This is logged as
+`terminal_hold`, not a Jev action or hidden replacement policy. The detector is an
+experimental ROM-specific visual signal; the replay must confirm the terminal event.
+
+The visible 30-second run `runs/defender-jev-gates-v2` scored **1,750**, reviewed by
+the assistant from `frame-0053.png`. It finished the 1,800-frame budget without a
+restart. The earlier v1 test is explicitly invalid because it accidentally restarted.
+
+## High-score board
+
+```bash
+.venv/bin/python -m playjev.challenge leaderboard
+```
+
+Open `runs/scoreboard/index.html`. `scores.json` accompanies the HTML for other
+tools. Scores are ranked **only within one game AND challenge ID**. Different ROMs,
+starting states or duration budgets stay separate. Each entry links to its replay
+and selected score screenshot. Evidence hashes are rechecked when building the board;
+incomplete, invalid, unreviewed or changed-evidence runs stay unranked.
+
+The initial reviewed scores are **Space Invaders 1,640 / 120 game seconds**, with
+the first-wave clear, and **Defender 1,750 / 30 game seconds**. These are not comparable
+against each other. Reviewer identity is shown: assistant visual review is not a
+human sign-off. Use `score --reviewer human` after your own review, or
+`--reviewer assistant` for assistant-reviewed evidence.
+
 ## Unified score challenges
 
 Challenge identity pins **game, ROM bytes, library/core asset bytes, saved state,
@@ -86,7 +127,7 @@ weaken comparability. Fast/¼-speed fixed-policy runs were tested to produce ide
 post-action images. Scores are compared only within an identical challenge ID—never
 Space Invaders points against Freeway crossings.
 
-**The metric is player-one high score during the run. Scoring is human-confirmed
+**The metric is player-one high score during the run. Scoring is visually reviewed
 for now.** Tesseract, if available, supplies untrusted per-decision OCR candidates
 and their maximum. An unreadable HUD is `null`, not zero. Review the replay and
 saved frames and enter the **highest observed player-one HUD score**, not a guess.
@@ -98,8 +139,8 @@ Use `--frame` to select its screenshot (default `final.png`):
 ```
 
 Only completed runs with the entire frame budget and confirmed scores are ranked.
-The score review includes the selected screenshot hash. This is a local evidence-based
-leaderboard, not a tamper-proof competition. Keep it human-confirmed until automatic
+The score review includes reviewer identity and the selected screenshot hash. This is a local evidence-based
+leaderboard, not a tamper-proof competition. Keep it visually reviewed until automatic
 HUD/RAM score adapters are independently validated for each ROM.
 
 No cheats, RAM writes, savestate lookahead or extra-life modifications are used.
@@ -132,7 +173,7 @@ Run it on the same challenge as `jev` to compare high scores fairly:
 .venv/bin/python -m playjev.challenge experiment challenges/invaders-10s experiments/atari-example.json --out runs/invaders-experiment --visible
 ```
 
-The JSON list varies `player` (`jev`, `fixed`, `random`), `observation` (`regions`,
+The JSON list varies `player` (`jev`, `jev-gates`, `jev-composed`, `fixed`, `random`), `observation` (`regions`,
 `compact`, `single`), `action_frames`, `model`, `seed`, and `question` (a text-file
 path relative to the experiment JSON). The example makes 120 API calls for a 10s
 challenge. All variants use the same initial state and frame budget. Confirm their
