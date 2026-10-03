@@ -1,9 +1,12 @@
-# Vision fallback and swappable models — integration plan
+# Ollaya-first vision and optional routing — integration plan
 
-Status: planned, not a working vision fallback. Finish the current rendered-overlay
-alignment fix before implementing the queued cookbook iteration.
+Status: planned, not a working image-input controller. Start with native pixels and
+local Ollaya text/vision calibration. Use hosted providers only for a documented local
+bottleneck and explicit user approval. See [OLLAYA-MODELS.md](OLLAYA-MODELS.md).
+Current gameplay transport is text-only; local vision requires CLI `--image`, image
+provenance/freshness plumbing and labeled tests, not just a model-name change.
 
-## Include jev-router
+## Optional jev-router reuse
 
 Upstream: <https://github.com/gargpratyush/jev-router> (MIT, per its README).
 The README reviewed for this plan describes `jev-claude` and `jev-codex` wrappers:
@@ -18,23 +21,27 @@ gameplay image-check API. Do not claim that installing the package enables eithe
 Before including runnable upstream code, inspect its source, pin a revision, retain
 its license, and test the integration boundary. No upstream code is vendored yet.
 Keep arcade model configuration separate from global Claude/Codex/OpenCode settings.
+Do not add a router for a single working local profile; eligible local models are
+the first candidate set. A routing judgment is not authorization for hosted use.
 
 ## Proposed arcade flow
 
 1. Code observes native pixels and computes the actual displayed content rectangle.
-   First fix projection arithmetic/letterboxing; vision must not hide that bug.
+   Validate projection arithmetic/letterboxing; vision must not hide geometry bugs.
 2. The normal combined Jev gameplay request also judges whether available evidence
    warrants a visual audit. Signals can include failed bounds checks, missing player,
    disagreement between observations, resize events or a user's mismatch report.
    A periodic visual audit can catch mismatches these signals do not expose.
-3. A selected vision-capable communication model receives an emulator-only rendered
+3. A selected local vision-capable model receives an emulator-only rendered
    crop plus its coordinate transform and, where needed, the native frame. Compare
    a clean rendered crop against the proposed boxes; an annotated copy is context,
    not proof. Do not upload the desktop, unrelated windows, ROM or credentials.
 4. The vision model proposes structured evidence: observed sprite boxes, displayed
-   content bounds, disagreements and uncertainty. It invokes a bounded Jev-check tool
-   using that evidence. Jev checks the supplied claims; it does not independently
-   see pixels in the existing structured-state API.
+   content bounds, disagreements and uncertainty. For a typed vision model such as
+   `decider:2b-vision`, code supplies crops/candidate choices instead of expecting free
+   captions or boxes. Separate typed checks consume proposed evidence; text-only
+   checks do not independently see the pixels. Generic communication-model tool
+   loops are optional later work, not a required local-vision prerequisite.
 5. Code validates schema, coordinate transforms, bounds, frame identity and freshness.
    Validated diagnoses can flag/suppress suspect overlays. Do not let a stale vision
    answer directly overwrite current controller actions or claim a verified score.
@@ -45,12 +52,13 @@ state, not a hidden game reset, blocking wait or silent paid-model fallback.
 
 ## Model swap contract to implement
 
-- Named profiles map to exact provider/model IDs and verified image/tool capabilities.
+- Named profiles map to exact local model IDs and verified image/question capabilities;
+  tool-loop capabilities are required only if the chosen workflow actually uses them.
 - Separate routing policy from inference transport and credentials.
 - An explicit profile override wins over automatic selection; unavailable models are
   reported rather than silently substituted.
-- Allow a configured free-only policy; verify current pricing and account access.
-  OpenCode Go availability is not itself evidence that a model is free or image-capable.
+- Filter to local Ollaya profiles by default. Hosted profiles require an approved
+  exception for a measured bottleneck; free pricing alone does not grant permission.
 - Log the selected profile, exact model, route reason, image/frame hash, transform,
   tool exchange, Jev request/answer, latency, usage, validation and stale rejection.
 - Publish tested swap commands and a minimal vision/tool probe with the implementation.
@@ -58,13 +66,14 @@ state, not a hidden game reset, blocking wait or silent paid-model fallback.
   mode code filters profiles by permissions, capabilities, availability and budget,
   then Jev chooses among eligible profiles plus abstain. A model switch increments
   the policy generation so pending results from the previous policy cannot execute.
-- Define "free LLM only" separately from total pipeline cost: the existing hosted
-  Jev checks still consume tokens. No unexpected paid LLM escalation is permitted.
+- Local inference consumes machine resources but no hosted quota. If a hosted
+  exception is approved, account for its full pipeline cost separately.
 
 ## Virtual-controller score comparison
 
-The swappable model is the communication/vision LLM operating a bounded Jev controller,
-not a replacement for Jev's typed endpoint. Keep its tool/action contract stable.
+The swappable model may be a local typed text/vision decision model, or an explicitly
+approved communication model. Keep its evidence/action contract stable; distinguish
+model judgments from code-owned fresh-frame execution and controller attribution.
 Compare fixed-profile attempts separately from adaptive routing: an adaptive score
 belongs to the routing policy, not to the last model selected.
 
@@ -82,7 +91,7 @@ Review live TypeSafe function-calling, extraction-cascade and verification examp
 Adapt their communication-model/typed-judgment separation rather than conflating a
 language model's description with independently verified visual evidence.
 
-Reviewed live examples:
+Design references:
 
 - [SDE cascade](https://docs.typesafe.ai/cookbooks/sde_cascade.md): model IDs are
   supplied to an extraction function; narrow per-field Nouls decide escalation.

@@ -20,14 +20,9 @@ restarts there are explicit benchmark resets, not hidden resets in a visible Ata
 attempt. Do not run the full training/reproduction pipeline as a routine smoke test:
 upstream documents substantial CUDA/training requirements.
 
-Latest recorded upstream random check: 1,600 environment steps, 689 steps/s, four
-episodes ended, mean completed-episode score 187.50. This is a short throughput
-check, not a reproduction of the published 16-episode policy evaluation.
-
-Current regression checkpoint: **75 tests passed**, including mocked live allocation
-failure (input release + recording preservation), observation-only discovery fallback,
-native captures, checkpoint tampering and bounded progression. No inference service
-is called by the regression suite.
+The suite covers input release/recording preservation on failure, observation-only
+discovery fallback, native capture, checkpoint tampering and bounded progression.
+Keep test output in the local check/run report, not a manually updated pass-count log.
 
 Upstream reports Space Invaders 400 for its pixel policy and teacher on held-out
 HTML-game episodes, with random 215 in the published table. The model reads the
@@ -66,9 +61,10 @@ PNGs to capture intervals; a duplicate `final.png` cannot supply a second observ
 The optional `playjev.hud RUN --typed` explicitly invokes the run's selected provider
 for additional glyph judgments; it still cannot override exact pixel checks.
 
-## Hosted development fallback — explicit only
+## Hosted exception — measured bottleneck and approval only
 
-Select **Jev · hosted** on the page, or launch with `--provider jev`. The TypeSafe key
+Only after local evaluation and explicit approval, select **Jev · hosted** on the
+page, or launch with `--provider jev`. The TypeSafe key
 stays server-side. There is no automatic fallback, hidden retry or provider substitution.
 The recorded provider is used for the entire attempt. Hosted regression checks are
 not part of the default test command. The older `playjev.challenge run --player jev...`
@@ -101,33 +97,19 @@ or inference limits save a safety hold/observation-only report. No automatic hos
 fallback or controller activation occurs. An explicit `--provider jev` classification
 retry spends hosted quota; do not include it in routine regressions.
 
-## Current local findings, not successes
+## Local-model validation requirements
 
-- The exact recorded five-question gameplay request passed sequential Ollaya CLI
-  inference in 4.35 seconds without state truncation.
-- The packed five-question CLI invocation failed CUDA allocation. Retained under
-  `runs/arcade-processes/ollaya-cli-batch-probe-v1.json`.
-- A visible local 12-second smoke advanced 728 frames continuously. One completed
-  decision arrived 632 frames late and was rejected; zero actions were applied.
-- Kev did not recognize the exact zero HUD glyph in the optional typed path. The
-  strict scorer correctly left that earlier review unknown. Deterministic font lookup
-  is now the shared default, avoiding unnecessary inference for exact-known glyphs.
-- Some live local contexts still exhaust GPU memory. Failed runs preserve recordings,
-  failure counters and unranked summaries. These are transport/model-performance
-  blockers, not permission to quietly use hosted Jev.
-- Dig Dug 600-frame continuation: 3 requests, 2 completed (4.24/3.53 s), 2 stale,
-  1 cancelled, zero applied. Exact logical requests/responses/cancellations are saved
-  in `inference.jsonl`, even when no completed decision row exists.
-- Initial-load Dig Dug probes were repeatable across two six-input traces. Miner
-  response was up to 4 horizontal/8 vertical pixels per 30-frame probe in those samples.
-  These empirical ranges are not guaranteed future speed bounds.
-- Kev classified every candidate as enemy with confidence approximately 0.15–0.18.
-  A larger combined strategy request failed a 253,755,392-byte GPU allocation.
-  With the abstention safety policy, these roles remain unknown and strategy inference
-  is skipped. Improving transport reliability does not validate semantic accuracy.
+Measure cold/warm latency, decision age, memory and labeled semantic accuracy
+separately. A fast request or repeatable deterministic input trace does not prove
+accurate role classification, effective pumping or continuous Jev gameplay.
+Keep unusable roles observation-only; do not weaken expiry guards to obtain movement.
+Exact logical requests/responses/cancellations belong in `inference.jsonl`, including
+requests that produce no completed decision row. Preserve failed recordings and
+unranked summaries locally, without duplicating a trial history in documentation.
 
-Latency and allocation must improve before local high-score comparisons are meaningful.
-The provider switch is working; effective local gameplay is not yet established.
+Evaluate [Ollaya text and vision](OLLAYA-MODELS.md) before considering an explicitly
+approved hosted exception for a reproducible local bottleneck. Regression tests
+remain mocked; optional vision/model downloads and probes are separate operations.
 
 ## Community-facing extension boundaries
 

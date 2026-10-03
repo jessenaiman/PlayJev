@@ -196,8 +196,8 @@ their implementation before accepting their scores.
 The `jev-gates` Space Invaders player combines threat, dodge, firing-lane and fire
 questions with read-only six-frame laser tracking, collision-vetoed paths and timed
 alignment. It uses 12-frame decisions near low projectiles, otherwise the chosen
-action budget. The [first-wave checkpoint](ATARI-CHECKPOINT.md) documents a visible
-successful run and its exact source hashes.
+action budget. Inspect native frames and the replay to verify any claimed wave clear;
+a policy name or completed frame budget is not evidence of success.
 
 Space Invaders also supports `--player jev-composed`: one API call asks separate
 movement (`left/right/stay`) and trigger (`fire/release`) questions. Code combines
@@ -232,5 +232,5 @@ In `playjev/challenge.py`:
   then register it in `GAMES`. State creation, validation, recording, slow watching,
   budgets, experiment orchestration and comparison remain shared.
 
-Use the same challenge files for future players (including a future Ollaya player).
-No Ollaya/local model is installed or used by this implementation.
+Use the same challenge files for comparable player trials. The continuous runner
+defaults to Ollaya CLI; hosted `jev...` benchmark players require explicit selection.

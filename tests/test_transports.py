@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
-from playjev.transports import OllayaTransport, HostedJevTransport, inference, ollaya_manifest, RecordedTransport, SafetyHold
+from playjev.transports import HOSTED_CREDENTIALS, OllayaTransport, HostedJevTransport, inference, ollaya_manifest, RecordedTransport, SafetyHold
 from playjev.challenge import JevPlayer
 
 
@@ -35,11 +35,11 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         response={'model':'kev:0.8b','answers':{'q':{'type':'noul','noul':0.9}},'usage':{'input_tokens':25,'output_tokens':0},'state_truncated':False}
         process=Mock(returncode=0)
         process.communicate=AsyncMock(return_value=(json.dumps(response).encode(),b''))
-        with patch.dict(os.environ,{'TYPESAFE_API_KEY':'test-secret','JEV_API_KEY':'other-secret'}),patch('asyncio.create_subprocess_exec',new=AsyncMock(return_value=process)) as spawn:
+        with patch.dict(os.environ,{name:'test-secret' for name in HOSTED_CREDENTIALS}),patch('asyncio.create_subprocess_exec',new=AsyncMock(return_value=process)) as spawn:
             result=await OllayaTransport().request({'model':'kev:0.8b','state':{'ready':True},'questions':{'q':question}})
         args=spawn.call_args.args;env=spawn.call_args.kwargs['env']
         self.assertEqual(args[:3],('ollaya','run','kev:0.8b'))
-        self.assertNotIn('TYPESAFE_API_KEY',env);self.assertNotIn('JEV_API_KEY',env)
+        for name in HOSTED_CREDENTIALS:self.assertNotIn(name,env)
         self.assertEqual(json.loads(args[-1]),{'q':question})
         self.assertEqual(json.loads(process.communicate.call_args.args[0]),{'ready':True})
         self.assertIn('ollaya-cli',result['transport'])

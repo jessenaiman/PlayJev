@@ -1,0 +1,10 @@
+#!/bin/sh
+# One project-local command; invoking it authorizes this project's bounded save point.
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ ! -x "$ROOT/.venv/bin/python" ]; then
+  echo 'Missing PlayJev .venv/bin/python; follow ATARI2600.md setup.' >&2
+  exit 2
+fi
+cd "$ROOT"
+exec "$ROOT/.venv/bin/python" -m playjev.savepoint "$@"

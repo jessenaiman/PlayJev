@@ -2,7 +2,7 @@
 
 Crackpots is not in PlayJev's existing HTML game roster. This experimental adapter
 uses your own Atari 2600 ROM through EmulatorJS, with continuous rendering and
-asynchronous hosted Jev lane/drop judgments. No ROM or API key is shipped.
+asynchronous typed lane/drop judgments through Ollaya CLI by default. No ROM or API key is shipped.
 
 ## Play and watch
 
@@ -32,7 +32,7 @@ It associates bugs between frames and computes candidate pot/bug interceptions.
 Initial speed estimates (0.7 gardener pixels/frame and 1.6 falling-pot pixels/frame)
 are explicitly recorded; they remain estimates, not measured calibration values.
 
-Hosted Jev independently selects a pot lane and whether an aligned interception
+The selected local model independently selects a pot lane and whether an aligned interception
 justifies releasing a pot. Code computes readiness and travel durations, rebases
 movement against the newest gardener observation when the answer arrives, and
 rejects stale or edge-blocked actions. Keeping a previously selected target is
@@ -40,12 +40,10 @@ conditional on that lane still having a predicted catch.
 
 ## Scoring and limitations
 
-The initial three-configuration Tesseract/Jev experiment misread 0 as 11 and 690
-as 630 or 90. It was not ranked. `playjev/crackpots_score.py` now has a separate
-six-column/eight-row Activision font, calibrated against the visible raw recording.
-The shared HUD workflow sends distinct glyph grids and literal mismatch counts to
-hosted Jev in one batched request per recording. Code requires exact pixel/template
-agreement and repeated score evidence before recording an automated reviewed score.
+`playjev/crackpots_score.py` supplies a six-column/eight-row Activision font.
+The shared HUD workflow uses exact template/repetition checks by default, without
+inference. Optional typed glyph judgments use the explicitly selected provider;
+they cannot override exact pixel/template agreement and repeated score evidence.
 Blank or damaged glyphs are not fabricated numbers. Six score positions are supported.
 The old OCR helper is retained as an experimental fallback, not the default pipeline.
 
@@ -53,19 +51,11 @@ The old OCR helper is retained as an experimental fallback, not the default pipe
 This is **Jev-pipeline review**, not a human-confirmed competition score. Continuous
 smoke tests remain unranked and distinct from fixed-budget benchmark results.
 
-The first two 40-second development runs scored zero. After fixing window detection,
-rebasing late movement, and explicitly exposing aligned drop opportunities, v3
-reached a visible **690** and blue bugs. Its replay is
-`runs/crackpots-continuous-v3/replay.html`. It is not a claim of game completion.
-The exact-glyph Jev workflow subsequently recovered **690** with **231/231** saved
-HUD frames accepted, using one request with ten distinct nonblank glyphs. Empty
-leading positions are literal all-dark pixels, resolved in code rather than sent
-to Jev. The earlier two runs were recovered as zero, not the false OCR "11".
-
-A separate 20-frame movement probe measured approximately **0.925 pixels/frame**
-(33.5 → 52.0 in normalized screenshots). The played v3 policy used its recorded
-0.7 estimate; future calibration should use raw frames and multiple measured
-segments before silently replacing those settings. This probe is not a scored run.
+Empty leading positions are literal all-dark pixels, resolved in code. OCR is
+untrusted; do not substitute its guesses for exact glyph evidence. Calibrate motion
+on multiple native-frame segments before changing recorded speed settings; a paused
+movement probe is not a scored gameplay run. Read reviewed scores from the generated
+[evidence-linked board](ATARI-RESULTS.md), not a manually maintained trial history.
 
 Game-over detection is **not validated** for Crackpots. It does not reuse the
 Space Invaders background-color rule. Use Stop & save; do not treat a timed smoke

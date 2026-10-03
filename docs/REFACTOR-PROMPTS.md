@@ -54,8 +54,8 @@ object-role hypotheses with unknown -> evidence-verified game profile -> fresh-f
 guarded controller. Code owns geometry, clocks, permissions and score proof. Jev
 supplies typed semantic decisions; confidence is not evidence.
 
-Our local Ollaya kev:0.8b judgments take roughly 3.5-4.2 seconds in a Dig Dug trial,
-so stale per-action replies are rejected. Compare cached typed strategy + local
+Local Ollaya judgments can miss Dig Dug's execution deadline; measure current
+accuracy/latency before choosing a model. Compare cached typed strategy + local
 servo against slow high-level target selection with fresh bounded execution, without
 silently replacing Jev with an unrelated baseline. Explain honest controller/provider
 attribution, invalidation when ROM/assets/profile/state changes, and fair cohorts.
@@ -74,8 +74,9 @@ todo/task-list support actually exists in the installed version. This agent sess
 currently exposes no todo tool, and the published V2 API has no todo route/schema.
 Do not invent V1 endpoints or claim a Markdown checklist is a native task update.
 
-Find a supported minimal way to maintain ordered tasks with pending/in-progress/
-blocked/completed status, acceptance criteria, artifact links and Git checkpoints.
+Find a supported minimal way to maintain ordered open tasks with pending/in-progress/
+blocked status, acceptance criteria and local artifact links. Remove validated tasks;
+Git maintains change history, so do not add completed-task archives or work logs.
 Compare native capabilities, maintained plugins, plain Markdown and small local
 JSON/SQLite tracking; preserve the project checklist as a source of truth rather
 than maintaining conflicting copies. Provide verified APIs/install/configuration

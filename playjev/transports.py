@@ -7,8 +7,12 @@ import httpx
 from datetime import datetime, timezone
 
 
+HOSTED_CREDENTIALS=('TYPESAFE_API_KEY','JEV_API_KEY','OPENROUTER_API_KEY','OPENAI_API_KEY',
+                    'ANTHROPIC_API_KEY','GH_TOKEN','GITHUB_TOKEN')
+
+
 def local_environment():
-    return {k:v for k,v in os.environ.items() if k not in ('TYPESAFE_API_KEY','JEV_API_KEY')}
+    return {k:v for k,v in os.environ.items() if k not in HOSTED_CREDENTIALS}
 
 
 def safety_report(exc):

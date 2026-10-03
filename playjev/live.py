@@ -137,8 +137,8 @@ async def play(args):
                         try:
                             decision=pending.result()
                         except Exception as exc:
-                            metrics.failed+=1
                             summary['safety_fallback']=exc.report if isinstance(exc,SafetyHold) else safety_report(exc)
+                            metrics.finish_request('failed',summary['safety_fallback']['kind'])
                             summary['stop_reason']='inference-safety-hold'
                             await env.page.evaluate('()=>{window.releaseLive();EJS_emulator.pause();}')
                             raise
@@ -180,8 +180,9 @@ async def play(args):
                             raise ValueError('Renderer viewport unavailable; projection cannot be verified')
                         player.accuracy_evidence=spatial_evidence(current,transform['canvas_rect'],content=transform['content_rect'])
                         pending=asyncio.create_task(player.decide(state,game))
-                        metrics.start_request()
-                    snapshot=metrics.snapshot(current,elapsed,pending is not None,clock)
+                        metrics.start_request(envelope.json(),request_started)
+                    buttons=await env.page.evaluate('()=>Array.isArray(window.liveButtons)?[...window.liveButtons]:null')
+                    snapshot=metrics.snapshot(current,elapsed,pending is not None,clock,emulator_frame=number,buttons=buttons)
                     metrics.write(args.out,snapshot)
                     await env.page.evaluate('text=>{const panel=document.getElementById("metrics");if(panel)panel.textContent=text;}',snapshot['ascii'])
                     previous,previous_frame=current,number
@@ -202,14 +203,16 @@ async def play(args):
             summary['error']=f'{type(exc).__name__}: {exc}'
         finally:
             write_phase(args.out,'stopping')
+            buttons=None
             if not env.page.is_closed():
                 with suppress(BrowserError):
                     await env.page.evaluate('()=>{window.releaseLive?.();EJS_emulator.pause();}')
+                    buttons=await env.page.evaluate('()=>Array.isArray(window.liveButtons)?[...window.liveButtons]:null')
                     if 'origin' in locals():
                         elapsed=await env.page.evaluate('EJS_emulator.gameManager.getFrameNum()')-origin
             if pending:
                 if not pending.done():
-                    metrics.cancelled+=1
+                    metrics.finish_request('cancelled','stop cancelled pending request')
                     pending.cancel()
                 await asyncio.gather(pending,return_exceptions=True)
             if frame is not None:
@@ -226,7 +229,12 @@ async def play(args):
                         (practice['base_frames']+summary['observation_setup_frames']) if practice and practice['resume_from'] else 0)
                 except Exception as exc:
                     summary['checkpoint_error']=f'{type(exc).__name__}: {exc}'
-            metrics.write(args.out,metrics.snapshot(previous if 'previous' in locals() else {},elapsed,False,clock))
+            snapshot=metrics.snapshot(profile.observe(frame) if frame is not None else {},elapsed,False,clock,
+                                      buttons=buttons,phase=summary['status'])
+            metrics.write(args.out,snapshot)
+            if not env.page.is_closed():
+                with suppress(BrowserError):
+                    await env.page.evaluate('text=>{const panel=document.getElementById("metrics");if(panel)panel.textContent=text;}',snapshot['ascii'])
             (args.out/'summary.json').write_text(json.dumps(summary,indent=2))
             write_phase(args.out,'recording')
     videos=list((args.out/'video').glob('*.webm'))

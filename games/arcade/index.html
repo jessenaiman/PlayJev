@@ -5,6 +5,7 @@
 :root{color-scheme:dark;font:16px system-ui;background:#10131c;color:#e9edfa}body{margin:0}main{max-width:1400px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}h1{font-size:36px;margin:0}h2{margin:28px 0 12px}p{color:#b4bdd6}button,input,select{font:inherit;border:1px solid #46506c;border-radius:9px;background:#20283a;color:inherit;padding:11px}button{cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}button.primary{background:#6b52dc;border-color:#9e8afa}input{min-width:0;flex:1}.intent{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.card,aside{background:#191f2e;border:1px solid #30394f;border-radius:12px;padding:18px}.card.selected{border-color:#b199ff;box-shadow:0 0 0 2px #6b52dc}.card h3{margin:0 0 8px}.badge{font:12px monospace;color:#a9edb6}aside{align-self:start;position:sticky;top:16px}pre{font:12px/1.45 monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#a9edb6}.scores{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:10px;text-align:left;border-bottom:1px solid #30394f;white-space:nowrap}a{color:#bdaeff}.notice{padding:12px;background:#20283a;border-radius:9px}.small{font-size:13px}.error{color:#ff9b9b}footer{margin-top:24px;color:#98a3bd}@media(max-width:900px){.layout{grid-template-columns:1fr}aside{position:static}main{padding:16px}h1{font-size:28px}}
 .layout>*{min-width:0}.scores{max-width:100%}*{box-sizing:border-box}
 .intent label{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}select{max-width:100%}
+#metrics-details{white-space:pre;overflow-wrap:normal;overflow:auto;max-height:50vh}summary{cursor:pointer}#feed-status{margin:8px 0}
 </style>
  <main><header><div><h1>Jev Arcade</h1><p>Watch one real attempt. Keep the score evidence.</p></div><span class="badge" id="provider">LOCAL ROMS · NO HIDDEN RESETS</span></header>
 <div class="intent"><input id="intent" aria-label="What to play" value="Continue Crackpots and try to improve the high score"><button id="recommend">Let Jev locate a game</button></div>
@@ -21,12 +22,12 @@
 <div class="intent"><label>Start state <select id="practice-resume"><option value="">Fresh challenge start</option></select></label><button id="practice-start" class="primary">Start next practice segment</button></div>
 <p class="small">One click launches one bounded segment, not a batch. X uses the selected metric. Resumes verify local state/ROM/assets and disclose setup frames. Practice scores are always unranked. Frame targets measure budget, not survival, waves or digging progress.</p>
 <h2>Next integrations</h2><p>Dig Dug is experimental: native-screen role estimates and pump controls, with score/terminal calibration pending. Pitfall · Asteroids — adapters pending. Jev/Ollaya comparisons remain blocked by local inference latency.</p></section>
-<aside><h3>Live Jev processes</h3><pre id="metrics">[ NO ACTIVE ATTEMPT ]
+<aside><h3>Live analytics</h3><p class="small" id="feed-status" role="status">Waiting for reporting feed.</p><pre id="metrics">[ NO ACTIVE ATTEMPT ]
 
 Jev locates a playable game.
 You choose when to start it.
 The emulator keeps running
-while decisions are pending.</pre><button id="stop" disabled>Stop & save active attempt</button><p class="small">The game opens in a separate visible browser window. This local front page stays open for scores and metrics.</p></aside></div>
+while decisions are pending.</pre><details><summary>Inferred map & model judgments</summary><pre id="metrics-details">No observations yet.</pre></details><button id="stop" disabled>Stop & save active attempt</button><p class="small">Read-only counters, sampled inputs and gate results; not proof of score or completion. Refreshes every 3 seconds. The game opens in a separate visible browser window.</p></aside></div>
 <footer>Loopback-only prototype. No ROMs or credentials are uploaded by this page. Game selection judgments and usage are saved locally.</footer></main>
 <script>
 let state,token,selected,pending=false;const $=id=>document.getElementById(id);
@@ -51,7 +52,13 @@ function render(){
   const results=state.scores.sort((a,b)=>a.game.localeCompare(b.game)||a.mode.localeCompare(b.mode)||a.challenge.localeCompare(b.challenge)||(b.score??-1)-(a.score??-1));
   for(const r of results){const tr=text('tr','');for(const v of [r.game,r.score===null?'Pending review':r.score.toLocaleString(),r.ranked?'ranked benchmark':r.score===null?r.status:'reviewed · unranked',r.mode+' / '+r.challenge.slice(0,8),(r.provider||r.player)+' · '+(r.model||r.player)+' · '+r.reviewer])tr.append(text('td',v));const td=text('td','');for(const [label,path] of [['Replay',r.replay],['HUD',r.hud]]){const a=text('a',label);a.href=path;a.target='_blank';a.rel='noopener';td.append(a,document.createTextNode(' '))}tr.append(td);$('scores').append(tr)}
  const active=state.active;$('stop').disabled=!active?.running;
-  if(active)$('metrics').textContent='[ '+active.phase.toUpperCase()+' ]\n'+active.provider+' · '+active.model+'\n'+(active.practice?((active.practice.resume_from?'RESUMED':'FRESH')+' PRACTICE · '+active.practice.metric+' target '+active.practice.target+' · cap '+active.practice.segment_frames+' frames\n'):'')+(active.error?active.error+'\n':'')+(active.metrics?.ascii||(active.game+'\n'+active.run));
+  if(active){
+   const m=active.metrics;
+   $('metrics').textContent='[ '+active.phase.toUpperCase()+' ]\n'+active.provider+' · '+active.model+'\n'+(active.practice?((active.practice.resume_from?'RESUMED':'FRESH')+' PRACTICE · '+active.practice.metric+' target '+active.practice.target+' · cap '+active.practice.segment_frames+' frames\n'):'')+(active.error?active.error+'\n':'')+(m?.analytics||(m?'requests '+m.requests+' · applied '+m.applied+'\nLegacy report; pending timing/held inputs unknown.':active.game+'\n'+active.run));
+   $('metrics-details').textContent=m?.ascii||'No observations yet.';
+   const age=m?.updated_at?Date.now()-Date.parse(m.updated_at):null;
+   $('feed-status').textContent=!active.running?'Saved/stopped report, not live gameplay.':age!==null&&age>10000?'Reporting stalled; last telemetry is over 10 seconds old.':'Reporting connected; counters measured, objects inferred.';
+  }else{$('metrics').textContent='[ NO ACTIVE ATTEMPT ]';$('metrics-details').textContent='No observations yet.';$('feed-status').textContent='Reporting connected; no active attempt.'}
 }
 async function refresh(){const r=await fetch('/api/state');if(!r.ok)throw Error('Front page unavailable');state=await r.json();token=state.token;render()}
 async function recommend(){if(pending)return;pending=true;$('recommend').disabled=true;$('navigation').textContent='Jev is locating a playable game…';try{const r=await post('/api/recommend',{intent:$('intent').value});selected=r.choice==='wait'?null:r.choice;$('navigation').textContent='Jev: '+r.choice+' · '+r.readiness+' · confidence '+(r.confidence??0).toFixed(2)+' — click Start for one visible attempt.';render()}catch(e){$('navigation').textContent='Jev navigation unavailable: '+e.message}finally{pending=false;$('recommend').disabled=false}}
@@ -61,5 +68,5 @@ $('practice-preview').onclick=async()=>{try{const r=await post('/api/practice-ta
 $('practice-game').onchange=()=>{$('practice-resume').value='';render()};
 $('practice-start').onclick=async()=>{const b=$('practice-start');b.disabled=true;try{const v=await post('/api/practice-start',{game:$('practice-game').value,increment:Number($('practice-increment').value),metric:$('practice-metric').value,cap_frames:Number($('practice-cap').value),resume_run:$('practice-resume').value||null});$('practice-goal').textContent=(v.practice.resume_from?'Resuming verified checkpoint':'Fresh challenge start')+' · '+v.practice.metric+' target '+v.practice.target+' · cap '+v.practice.segment_frames+' frames · '+v.run;await refresh()}catch(e){$('practice-goal').textContent=e.message;b.disabled=false}};
 refresh().then(()=>$('navigation').textContent='Choose a provider, then ask for a recommendation or start one visible attempt.').catch(e=>$('navigation').textContent=e.message);
-setInterval(()=>refresh().catch(()=>{}),3000);
+setInterval(()=>refresh().catch(()=>{$('feed-status').textContent='Reporting disconnected; displayed values are the last received snapshot.'}),3000);
 </script></html>
