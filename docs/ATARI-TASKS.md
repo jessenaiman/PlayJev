@@ -65,11 +65,12 @@ Do not mark a feature complete from a model judgment alone: attach tests/run evi
 
 ## 6. Jev-assisted check-in and push
 
-- [ ] Capture exact diff scope, tests, secret/artifact exclusions, branch and remote.
-- [ ] Jev judges release readiness over that evidence; save request/response.
-- [ ] Deterministic checks and explicit user authorization remain the authority.
-- [ ] Commit and push a feature branch, verify remote SHA, record the actual commands.
-- [ ] Document the demonstrated workflow and limits, not an unsupported universal
+- [x] Capture exact diff scope, tests, secret/artifact exclusions, branch and remote.
+- [x] Selected typed provider reviews release readiness; exact packet/request/response
+      saved locally. Development used Ollaya CLI, with hosted Jev still opt-in.
+- [x] Deterministic checks and explicit user authorization remain the authority.
+- [x] Commit/push `a277a15` to `fork/atari-continuous-jev`; remote SHA verified.
+- [x] Document the demonstrated workflow and limits, not an unsupported universal
       "best practice" or a claim that Jev itself ran Git.
 
 ## Existing limitations to preserve visibly
@@ -117,7 +118,8 @@ See [TESTING-ATARI.md](TESTING-ATARI.md) for upstream/local test contracts and f
 - [x] CLI comparison now shares board evidence hashing and game/challenge/mode grouping.
 - [x] Upstream HTML Invaders random bench and paired seed/action/frame-hash regression;
       preserve pixel-policy/teacher distinction and the upstream training recipe.
-- [ ] Finish regression documentation and prototype check-in with exact current evidence.
+- [x] Finish regression documentation and prototype check-in; see
+      [the release checkpoint](ARCADE-CHECKPOINT.md).
 - [ ] Local inference performance/calibration, then terminal calibration and comparable
       whole-attempt contracts. Keep unavailable Ollaya setups visibly blocked.
 - [ ] Alternating/provider-profile comparisons, new game adapters, then queued vision
