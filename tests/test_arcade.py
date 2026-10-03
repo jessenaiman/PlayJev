@@ -21,6 +21,25 @@ def choice(value,options):
 
 
 class ArcadeTests(unittest.TestCase):
+    def test_practice_start_is_explicit_pinned_and_rejects_path_escape(self):
+        from test_practice import checkpoint
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);app=Arcade(root)
+            source=root/'runs'/'source';metadata,_=checkpoint(source)
+            challenge=root/'challenge';challenge.mkdir();(challenge/'challenge.json').write_text(json.dumps(metadata))
+            entries=[{'id':'crackpots','available':True,'challenge':challenge,'goal':'catch bugs'}]
+            process=Mock(pid=123);process.poll.return_value=None
+            with patch('playjev.arcade.catalog',return_value=entries),patch('playjev.arcade.subprocess.Popen',return_value=process) as spawn:
+                with self.assertRaises(ValueError):app.start_practice('crackpots',100,'frames',120,'../../.env')
+                self.assertEqual(spawn.call_count,0)
+                active=app.start_practice('crackpots',100,'frames',120,'source')
+                self.assertIn('--practice-plan',spawn.call_args.args[0])
+                self.assertEqual(active['practice']['target'],220)
+                self.assertEqual(app.checkpoints()[0]['run'],'source')
+                app.configure_inference('jev');self.assertEqual(active['provider'],'ollaya')
+                with self.assertRaises(ValueError):app.start_practice('crackpots',100,'frames',120,'source')
+                self.assertEqual(spawn.call_count,1)
+
     def test_disconnected_viewer_does_not_trigger_a_second_response(self):
         cls=handler(Arcade());connection=cls.__new__(cls)
         connection.send_response=Mock();connection.send_header=Mock();connection.end_headers=Mock()

@@ -33,7 +33,7 @@ class Metrics:
         def mark(box,char):
             x=(box[0]+box[2])/2;y=(box[1]+box[3])/2
             grid[min(height-1,max(0,int(y/210*height)))][min(width-1,max(0,int(x/160*width)))]=char
-        for obj in current.get('aliens',current.get('bugs',[])):mark(obj['box'],'b' if self.game=='crackpots' else 'a')
+        for obj in current.get('aliens',current.get('bugs',current.get('enemies',[]))):mark(obj['box'],'b' if self.game=='crackpots' else 'a')
         for obj in current.get('pots',[]):mark(obj['box'],'v')
         for obj in current.get('projectiles',[]):mark(obj['box'],'|')
         if current.get('player'):mark(current['player']['box'],'P')

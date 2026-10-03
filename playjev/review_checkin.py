@@ -31,27 +31,32 @@ async def review(args):
     branch=command(['git','branch','--show-current'])['stdout'].strip()
     remote=command(['git','remote','get-url','fork'])['stdout'].strip()
     checks={}
-    for name in ('browser-check.json','resize-check.json','provider-toggle-check.json','display-check-v1/display-check.json','progress-check.json'):
+    for name in ('browser-check.json','resize-check.json','provider-toggle-check.json','display-check-v2/display-check.json','progress-check.json',
+                 'practice-resume-browser-check-v2.json','dig-dug-resume-check-v2/resume-check.json','dig-dug-discovery-v1/classification.json'):
         file=ROOT/'runs'/'arcade-processes'/name
         checks[name]=json.loads(file.read_text()) if file.is_file() else {'missing':True}
-    smoke=ROOT/'runs'/'arcade-ollaya-cli-smoke-v1'/'summary.json'
-    packet={'requested_scope':'Local arcade front page, shared adapters/scoring, viewport mapping, timing/accuracy gates, metrics and task list; last-observed endpoint ledger and score goal previews. No automatic progressive execution or checkpoint resumes. Prototype release, not completion of pending features.',
+    smoke=ROOT/'runs'/'dig-dug-local-trial-v1'/'summary.json'
+    packet={'requested_scope':'Explicit bounded fresh/resumed practice, canonical local checkpoints, experimental Dig Dug controls, repeatable initial-load discovery/classification, safe observation-only fallback, shared native capture and research prompts. No valid discovered controller or Dig Dug high score claimed. Prototype release, not completion of pending features.',
             'user_authorized_push':args.authorized,'staged_files':names,'diff_stat':command(['git','diff','--cached','--stat']),
             'tests':tests,'whitespace':whitespace,'branch':branch,'remote':remote,'browser_checks':checks,
             'smoke':json.loads(smoke.read_text()) if smoke.is_file() else {'missing':True},
             'artifact_guard':{'forbidden_paths':forbidden,'exact_credential_found':secret_match},
-            'known_limits':['Crackpots game-over unvalidated','Ollaya GPU/latency limits block effective real-time play','Native alternating-player mode pending','New games and vision cookbook queued','Separate game window, not inline hosted roster','Practice goals are previews only; world/wave progress and automatic execution are not calibrated'],
+            'known_limits':['Crackpots/Dig Dug game-over unvalidated','Ollaya latency and failed role calibration block effective real-time play','Native alternating-player mode pending','Dig Dug scores/rocks/ghosts and live discovered-controller integration pending','Separate game window, not inline hosted roster','Practice is explicitly launched one segment at a time; frame targets are budgets, not world/wave progress','Native OpenCode todo tool unavailable; persistent Markdown tasks refreshed'],
             'at':datetime.now(timezone.utc).isoformat()}
     browser=checks['browser-check.json'];resize=checks['resize-check.json']
     launch=browser.get('live_launch_test',{})
     browser_ok=bool(browser.get('checks')) and isinstance(launch,dict) and launch.get('launch_from_front_page') and launch.get('stop_from_front_page') and launch.get('video_saved')
     resize_ok=bool(resize.get('checks')) and len({c.get('raw_sha256') for c in resize.get('checks',[])})==1
-    display=checks['display-check-v1/display-check.json'];toggle=checks['provider-toggle-check.json']
+    display=checks['display-check-v2/display-check.json'];toggle=checks['provider-toggle-check.json']
     packet['required_evidence_checks']={'browser_launch_stop_video':bool(browser_ok),'identical_source_across_sizes':bool(resize_ok),'live_requests_observed':packet['smoke'].get('metrics',{}).get('requests',0)>0,
         'rendered_alignment':display.get('passed') is True and len(display.get('checks',[]))>=8 and all(c['max_error_css_pixels']<=2 for c in display.get('checks',[])),
         'provider_toggle_no_inference':toggle.get('no_inference_on_load_or_toggle') is True and toggle.get('live',{}).get('active_provider_pinned_on_toggle') is True and toggle.get('live',{}).get('video_saved') is True}
     progress=checks['progress-check.json']
     packet['required_evidence_checks']['practice_tracking_preview']=progress.get('endpoint_visible') is True and progress.get('no_recommendation_inference') is True and progress.get('endpoint',{}).get('capture_interval') is not None
+    resume=checks['practice-resume-browser-check-v2.json'];paired=checks['dig-dug-resume-check-v2/resume-check.json'];classification=checks['dig-dug-discovery-v1/classification.json']
+    packet['required_evidence_checks']['resumed_request_video_checkpoint']=resume.get('passed') is True and resume.get('game_frames')==120 and all(resume.get(k) is True for k in ('exact_cancelled_request_saved','video_saved','checkpoint_saved'))
+    packet['required_evidence_checks']['paired_resume_traces']=paired.get('passed') is True and len(paired.get('checks',[]))==7 and paired.get('inference_requests')==0
+    packet['required_evidence_checks']['unusable_classification_safely_held']=classification.get('status')=='observation-only' and classification.get('safety_fallback',{}).get('automatic_hosted_fallback') is False
     deterministic_ok=bool(names) and not forbidden and not secret_match and tests['returncode']==0 and whitespace['returncode']==0 and branch!='main' and remote=='https://github.com/jessenaiman/PlayJev.git' and args.authorized and all(packet['required_evidence_checks'].values())
     packet['deterministic_checks_pass']=deterministic_ok
     # Exact full evidence is retained locally. Give the verifier a bounded summary
@@ -62,7 +67,7 @@ async def review(args):
     review_state['summary_limit']='Reviews check evidence and disclosed scope, not every code line. Full packet is saved alongside this exact request.'
     body={'model':'jev-latest','state':review_state,'questions':{
         'readiness':{'type':'choice','instructions':'Does this evidence support an explicitly scoped prototype check-in and feature-branch push? Evaluate the shown tests, scope, artifact guard and disclosed limits. Ready does not certify code correctness or finish queued features. Missing evidence or failed checks requires hold.','criteria':{'ready':'Evidence supports this limited prototype check-in','hold_tests':'Tests or deterministic checks failed','hold_scope':'Wrong branch, remote, unauthorized work or excluded artifacts','hold_evidence':'Required evidence is missing or insufficient'}},
-        'limits_disclosed':{'type':'noul','instructions':'Does this packet explicitly disclose unvalidated game over, blocked Ollaya and queued games/vision work rather than claiming them complete?'}}}
+        'limits_disclosed':{'type':'noul','instructions':'Does this packet explicitly disclose unvalidated game over, blocked Ollaya classification/control and pending Dig Dug score/profile work rather than claiming a completed high-score challenge?'}}}
     model,transport=inference(args.provider,args.model)
     body['model']=model
     player=JevPlayer(model=model,transport=transport)

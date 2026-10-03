@@ -3,7 +3,26 @@
 Update this list and post the active checklist in chat whenever focus changes.
 Do not mark a feature complete from a model judgment alone: attach tests/run evidence.
 
-## 1. High scores, refactoring and front page — active
+## Current ordered work queue
+
+This file is the persistent project checklist. Completed means tested/artifact-backed,
+not merely a model's opinion. OpenCode's native todo tool is not exposed in this
+session; V2 API discovery found no todo route/schema. No native todo update is claimed.
+
+1. **Implemented; calibration blocked:** initial-load discovery/classification (§10):
+   repeatable probes and typed hypotheses exist; actual Kev roles stay unknown/observe-only.
+2. **Completed/tested:** bounded progression/resume (§9): exact 120-frame fresh/resumed
+   browser segments, compatible checkpoints, paired traces and cancelled-request evidence.
+3. **Blocked:** effective per-action Ollaya control: latest 600-frame Dig Dug trial
+   completed two replies after 258/215 frames (4.24/3.53 s), rejected both, zero applied.
+4. **Pending:** Dig Dug high-score/pump/terminal calibration and fresh-frame discovered
+   controller integration; never claim a win or unknown score as zero.
+5. **In progress:** final review/publication. Native capture is consolidated; further
+   lifecycle refactoring awaits findings from [REFACTOR-PROMPTS.md](REFACTOR-PROMPTS.md).
+6. **Queued:** terminal contracts, real compositor/touch checks, fair provider trials,
+   additional games, vision/free-model routing and supported native task integration.
+
+## 1. High scores, refactoring and front page
 
 - [x] Extract shared live-game hooks: observe, track, overlay, prepare controls,
       lifecycle signal, player factory and score collector.
@@ -57,7 +76,9 @@ Do not mark a feature complete from a model judgment alone: attach tests/run evi
 
 ## 5. New games
 
-- [ ] Dig Dug: controls, terrain/enemy perception, pump timing, score glyphs, lifecycle.
+- [x] Dig Dug experimental adapter: four-direction/pump actions, native player/enemy
+      and coarse tunnel estimates; local challenge and visible calibration artifacts.
+- [ ] Dig Dug: effective pump timing, rocks/ghosts, score glyphs and lifecycle calibration.
 - [ ] Pitfall: moving hazards, jumps, lives/timer, treasure scoring, lifecycle.
 - [ ] Asteroids: heading/velocity, lead shots, wraparound prediction, HUD and lifecycle.
 - [ ] Register adapters without adding per-game branches to the shared live loop.
@@ -135,10 +156,69 @@ See [TESTING-ATARI.md](TESTING-ATARI.md) for upstream/local test contracts and f
 - [ ] Calibrate game-progress metrics (e.g. cleared aliens/waves); unsupported
       wave/score values stay unknown. Budget increments, if added, must be explicit
       practice caps rather than completion/progress evidence.
-- [ ] Supply endpoint failures and progress targets as bounded context to the next
+- [x] Supply endpoint failures and progress targets as bounded context to the next
       controller attempt, preserving inference/action provenance.
-- [ ] Fresh-start evaluation stays separate from adaptive practice and any explicitly
+- [x] Fresh-start evaluation stays separate from adaptive practice and any explicitly
       resumed checkpoints. Never silently resume/reset or rank evolving budgets together.
 - [x] Test unknown baseline, evidence tampering, capture/hash mismatch, repeated
       failures and increment bounds; browser ledger/goal preview and layouts checked.
-- [ ] Test achieved-target execution and caps before enabling automatic progression.
+- [x] Test repeated-score goal acceptance and frame-budget execution/caps; fresh goal
+      clipping is reported not achieved. Actual score-goal gameplay remains unproven.
+- [ ] Optional automatic batches/checkpoint schedules need separate user authorization,
+      explicit reset rules and terminal calibration; current progression is one click/segment.
+
+## 9. Active iteration: resumable practice and Dig Dug
+
+- [x] Explicit next-practice launch: supported score + X, or labelled frame-budget
+      extension + X; configurable per-segment cap, no automatic batch/reset.
+- [x] Save a released-input, canonical emulator checkpoint with ROM/assets/challenge
+      hashes, state/image hashes, parent linkage and disclosed setup-frame counts.
+- [x] Verify checkpoint bytes and canonical restore before resuming; reject changed,
+      incompatible, failed or suspected-terminal sources rather than restarting silently.
+- [x] Stop on supported repeated HUD target or frame cap; supply bounded prior endpoint
+      context to the controller and keep all practice modes explicitly unranked.
+- [x] Add front-page fresh/resume practice controls and tests for unknown scores,
+      achieved targets, caps, repeated failures, tampering and provider pinning.
+- [x] Create `dig-dug-tunnel-v1` with disclosed intro setup; test four-direction/pump
+      inputs and native terrain/enemy/player candidates. Score remains unknown.
+- [x] Run visible Dig Dug and resume checks on Ollaya CLI only; preserve delayed/failed
+      actions and recordings without claiming successful LLM play.
+- [ ] Update documentation, run offline regressions, review and publish supported scope.
+
+## 10. Initial-load discovery and classification — active
+
+- [x] Make initial-load calibration a repeatable script: canonical restore, bounded
+      joystick/pump probes, native snapshots, pixel deltas and object-motion bounds.
+- [x] Separate measured candidate objects/starting boxes from typed role hypotheses;
+      include unknown/coverage gaps and retain exact Jev/Ollaya questions/probabilities.
+- [x] Profile verification gates bind repeatable snapshot evidence and challenge/ROM/
+      assets/script; tests reject tampering and unsupported player hypotheses. Actual
+      Kev role failures are disclosed; no live discovered controller was enabled.
+- [ ] Combine the classified profile with fresh-frame geometry for Dig Dug control;
+      measure scores and failures, never call discovery a completed high-score run.
+- [x] Keep discovery/classification distinct from model training, scored gameplay,
+      automatic ROM execution, benchmark resets and hidden inference/provider fallback.
+- [x] Local limit/unsupported-feature safety fallback: release/stop/save for failed
+      gameplay; observation-only for unusable classification. Exact requests retained.
+      Mocked live failure test verifies recording preservation and no hosted call.
+- [ ] Calibrate narrow typed-role judgments or select an explicitly working provider;
+      cached strategy/controller integration cannot proceed from the rejected roles.
+
+## 11. Research and systematic tracking
+
+- [x] Copy/paste package/refactor prompts in [REFACTOR-PROMPTS.md](REFACTOR-PROMPTS.md).
+- [x] Refresh this ordered queue, per-feature tasks and current evidence/blockers.
+- [x] Verify OpenCode V2 API/tool availability rather than inventing a native todo update.
+- [ ] Use a supported native todo/task tool if exposed later; currently unavailable.
+- [ ] Review the user's returned research, choose minimal dependencies and test the
+      migration before installing packages or replacing working contracts.
+
+### Latest evidence
+
+75 offline tests passed. Shared native capture passed eight rendered-pixel checks
+(max 0.85 CSS px) and seven paired resume image/state comparisons. Browser practice
+checks at 390×844, 960×540 and 1440×900 passed; latest resumed segment saved the exact
+cancelled request, video and checkpoint at 120 frames. Evidence is local under
+`runs/arcade-processes/practice-resume-browser-check-v2.json`, `display-check-v2/`,
+`dig-dug-resume-check-v2/` and `dig-dug-discovery-v1/`. No hosted inference was used
+for this iteration. Dig Dug high-score completion and real-time Ollaya play are blocked.

@@ -4,10 +4,28 @@ import asyncio
 import json
 import hashlib
 import httpx
+from datetime import datetime, timezone
 
 
 def local_environment():
     return {k:v for k,v in os.environ.items() if k not in ('TYPESAFE_API_KEY','JEV_API_KEY')}
+
+
+def safety_report(exc):
+    text=str(exc).lower()
+    kind=('allocation-limit' if 'allocate memory' in text or 'gpu allocation' in text else
+          'timeout' if isinstance(exc,(asyncio.TimeoutError,httpx.TimeoutException)) else
+          'unsupported-feature' if any(p in text for p in ('unsupported question','unsupported type','not supported','unknown question type')) else
+          'invalid-response' if isinstance(exc,(ValueError,KeyError,TypeError)) else 'inference-error')
+    return {'kind':kind,'action':'release-inputs-stop-save','automatic_hosted_fallback':False,
+            'retry':'Explicit retry only; hosted Jev requires an explicit provider selection',
+            'error':f'{type(exc).__name__}: {exc}'}
+
+
+class SafetyHold(RuntimeError):
+    def __init__(self,exc):
+        self.report=safety_report(exc)
+        super().__init__(self.report['error'])
 
 
 async def ollaya_manifest(model):
@@ -33,6 +51,29 @@ class HostedJevTransport:
             response=await client.post('https://api.typesafe.ai/v1/systemone',json=body,headers=headers)
             response.raise_for_status()
             return response.json()
+
+
+class RecordedTransport:
+    """Keep exact logical requests even when cancellation prevents a decision row."""
+    def __init__(self,transport,path):
+        self.transport=transport;self.path=path;self.context=None;self.sequence=0
+
+    def write(self,sequence,event,**fields):
+        with self.path.open('a') as log:
+            log.write(json.dumps({'sequence':sequence,'event':event,
+                'at':datetime.now(timezone.utc).isoformat(),**fields})+'\n')
+
+    async def request(self,body):
+        sequence=self.sequence;self.sequence+=1
+        self.write(sequence,'started',request=body,context=self.context)
+        try:
+            response=await self.transport.request(body)
+        except BaseException as exc:
+            self.write(sequence,'cancelled' if isinstance(exc,asyncio.CancelledError) else 'failed',
+                       error=f'{type(exc).__name__}: {exc}')
+            raise
+        self.write(sequence,'completed',response=response)
+        return response
 
 
 class OllayaTransport:
@@ -68,13 +109,19 @@ class OllayaTransport:
     async def request(self,body):
         answers,responses,subrequests={},[],[]
         # Serial contexts retain exact state/rubrics for limited local GPU memory.
-        for key,question in body['questions'].items():
-            part={**body,'questions':{key:question}}
-            result=await self.run(body['model'],body['state'],part['questions'])
-            answers.update(result['answers']);responses.append(result);subrequests.append(part)
-        return {'model':responses[0]['model'],'answers':answers,
-                'usage':{k:sum(r['usage'][k] for r in responses) for k in ('input_tokens','output_tokens')},
-                'transport':'ollaya-cli-sequential-single-question','subrequests':subrequests,'subresponses':responses}
+        try:
+            if not body.get('questions'):raise ValueError('No typed questions supplied')
+            for key,question in body['questions'].items():
+                if question.get('type') not in ('choice','noul','score'):
+                    raise ValueError('Unsupported question type: '+str(question.get('type')))
+                part={**body,'questions':{key:question}}
+                result=await self.run(body['model'],body['state'],part['questions'])
+                answers.update(result['answers']);responses.append(result);subrequests.append(part)
+            return {'model':responses[0]['model'],'answers':answers,
+                    'usage':{k:sum(r['usage'][k] for r in responses) for k in ('input_tokens','output_tokens')},
+                    'transport':'ollaya-cli-sequential-single-question','subrequests':subrequests,'subresponses':responses}
+        except asyncio.CancelledError:raise
+        except Exception as exc:raise SafetyHold(exc) from exc
 
 
 def inference(provider='ollaya',model=None):

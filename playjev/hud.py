@@ -79,6 +79,16 @@ def exact_answers(grids,font=FONT):
     return answers
 
 
+def read_score(game, frame):
+    """Single-frame literal candidate; callers still require independent repeats."""
+    if game=='space-invaders':extractor,font=digit_grids,FONT
+    elif game=='crackpots':
+        from .crackpots_score import digit_grids as extractor, FONT as font
+    else:return None
+    grids=extractor(frame)
+    return assemble(grids,{'answers':exact_answers(grids,font)},font)['value']
+
+
 async def collect(directory,typed=False):
     from .challenge import JevPlayer, ROOT, digest, replay_html
     from dotenv import load_dotenv

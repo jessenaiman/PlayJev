@@ -1,13 +1,35 @@
 import asyncio
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
-from playjev.transports import OllayaTransport, HostedJevTransport, inference, ollaya_manifest
+from playjev.transports import OllayaTransport, HostedJevTransport, inference, ollaya_manifest, RecordedTransport, SafetyHold
 from playjev.challenge import JevPlayer
 
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_limit_and_unsupported_feature_have_safe_non_hosted_fallback(self):
+        local=OllayaTransport()
+        with patch.object(local,'run',new=AsyncMock(side_effect=RuntimeError('Failed to allocate memory'))),patch.object(HostedJevTransport,'request',new=AsyncMock()) as hosted:
+            with self.assertRaises(SafetyHold) as e:await local.request({'model':'kev:0.8b','state':{},'questions':{'q':{'type':'noul'}}})
+            self.assertEqual(e.exception.report['kind'],'allocation-limit')
+            self.assertEqual(e.exception.report['action'],'release-inputs-stop-save');hosted.assert_not_awaited()
+        with patch.object(local,'run',new=AsyncMock()) as run:
+            with self.assertRaises(SafetyHold) as e:await local.request({'model':'kev:0.8b','state':{},'questions':{'q':{'type':'vision-stream'}}})
+            self.assertEqual(e.exception.report['kind'],'unsupported-feature');run.assert_not_awaited()
+    async def test_exact_request_is_retained_on_cancel_and_failure(self):
+        for exc,event in ((asyncio.CancelledError(),'cancelled'),(RuntimeError('allocation'),'failed')):
+            with tempfile.TemporaryDirectory() as tmp:
+                transport=Mock();transport.request=AsyncMock(side_effect=exc)
+                recorded=RecordedTransport(transport,Path(tmp)/'inference.jsonl')
+                recorded.context={'source_frame':100};body={'model':'kev:0.8b','state':{'practice':{'target':244}},'questions':{}}
+                with self.assertRaises(type(exc)):await recorded.request(body)
+                rows=[json.loads(line) for line in recorded.path.read_text().splitlines()]
+                self.assertEqual([r['event'] for r in rows],['started',event])
+                self.assertEqual(rows[0]['request'],body);self.assertEqual(rows[0]['context'],recorded.context)
+
     async def test_cli_contract_and_no_hosted_credentials(self):
         question={'type':'noul','instructions':'Ready?'}
         response={'model':'kev:0.8b','answers':{'q':{'type':'noul','noul':0.9}},'usage':{'input_tokens':25,'output_tokens':0},'state_truncated':False}
@@ -29,7 +51,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             process=Mock(returncode=code);process.communicate=AsyncMock(return_value=(stdout,stderr))
             with patch('asyncio.create_subprocess_exec',new=AsyncMock(return_value=process)),patch.object(HostedJevTransport,'request',new=AsyncMock()) as hosted:
                 with self.assertRaises((RuntimeError,ValueError)):
-                    await OllayaTransport().request({'model':'kev:0.8b','state':{},'questions':{'q':{}}})
+                    await OllayaTransport().request({'model':'kev:0.8b','state':{},'questions':{'q':{'type':'noul'}}})
                 hosted.assert_not_awaited()
 
     async def test_timeout_kills_and_reaps_cli(self):

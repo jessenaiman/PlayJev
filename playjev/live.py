@@ -12,9 +12,13 @@ from .runtime import registry
 from .metrics import Metrics, write_phase
 from .timing import DecisionClock
 from .spatial import evidence as spatial_evidence
-from .execution import FrameStamp, DecisionEnvelope
-from .transports import inference, ollaya_manifest
+from .execution import DecisionEnvelope
+from .transports import inference, ollaya_manifest, RecordedTransport, SafetyHold, safety_report
 from .progress import endpoint, save as save_progress
+from .practice import Goal, validate as validate_practice
+from .checkpoints import capture as capture_checkpoint
+from .hud import read_score
+from .native import capture as native_capture
 
 
 async def play(args):
@@ -29,12 +33,22 @@ async def play(args):
     snapshot=(args.challenge/'start.state').read_bytes()
     if digest(rom.read_bytes())!=metadata['rom_sha256'] or asset_digest(assets)!=metadata['assets_sha256'] or digest(snapshot)!=metadata['state_sha256']:
         raise ValueError('Challenge bytes changed')
+    practice=None;goal=None
+    if getattr(args,'practice_plan',None):
+        practice=validate_practice(json.loads(args.practice_plan.read_text()),metadata)
+        goal=Goal(practice)
+    expected=metadata['ready_state_sha256']
+    if practice and practice['resume_from']:
+        snapshot=(Path(practice['resume_from'])/'checkpoint.state').read_bytes()
+        expected=practice['checkpoint']['ready_state_sha256']
     load_dotenv(ROOT.parent/'.env',override=False)
     args.out.mkdir(parents=True,exist_ok=False)
     write_phase(args.out,'starting')
     provider=getattr(args,'provider','ollaya')
     model,transport=inference(provider,getattr(args,'model',None))
+    transport=RecordedTransport(transport,args.out/'inference.jsonl')
     player=profile.player_factory(model=model,transport=transport)
+    if goal:player.practice_context=goal.context()
     pending=None
     records=[]
     elapsed=0
@@ -46,41 +60,33 @@ async def play(args):
                'config':{'player':'jev-gates','provider':provider,'model':model,'policy_version':profile.policy_version,'timing_gate':'bounded-cycle-v1','score_reader':'exact-templates+independent-frame-repeat-v1'},
               'playback_mode':'continuous','game_completed':False}
     summary['terminal_detection']=profile.terminal_note
+    if practice:
+        summary['practice']=practice
+        summary['playback_mode']='continuous-practice-resumed' if practice['resume_from'] else 'continuous-practice-fresh'
+        (args.out/'practice-plan.json').write_text(json.dumps(practice,indent=2))
     if provider=='ollaya':
         summary['config']['model_manifest']=await ollaya_manifest(model)
     summary['config']['source_sha256']={name:digest((ROOT/'playjev'/name).read_bytes())
-        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py','progress.py',profile.source)}
+        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py','progress.py','practice.py','checkpoints.py','native.py',profile.source)}
     summary['config']['display_sha256']={name:digest((ROOT/'games/emulatorjs'/name).read_bytes())
         for name in ('index.html','live-controls.js')}
     async with EmulatorSession(assets,rom,True,args.out/'video',1,responsive=True) as env:
         frame=None
-        async def raw_capture():
-            # DOM overlays are for the viewer, never input to perception/OCR.
-            # WebGL canvas.toDataURL can be black once its buffer is discarded.
-            # EmulatorJS exposes a read-only framebuffer PNG via the core.
-            captured=await env.page.evaluate('''async()=>{
-                const gm=EJS_emulator.gameManager,before=gm.getFrameNum();
-                let timer;
-                try {
-                    const data=await Promise.race([gm.screenshot(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Framebuffer screenshot timed out')),3000);})]);
-                    return {data:Array.from(data),before,after:gm.getFrameNum()};
-                } finally {clearTimeout(timer);}
-            }''')
-            data=bytes(captured['data'])
-            return data,FrameStamp(captured['before'],captured['after'],digest(data))
         try:
             await env.frames([],40,slow=False)
-            await env.restore_matching(snapshot,metadata['ready_state_sha256'])
+            _,setup=await env.restore_matching(snapshot,expected)
+            summary['restore_setup_callbacks']=setup
+            summary['canonical_restore_verified']=True
+            summary['restored_state_sha256']=expected
             # The initial observation also uses the raw core, not a window-sized
             # screenshot. Exactly one setup frame processes the screenshot command.
-            await env.page.evaluate('()=>{window.initialCapture=EJS_emulator.gameManager.screenshot();}')
-            await env.frames([],1,slow=False)
-            initial=bytes(await env.page.evaluate('async()=>Array.from(await window.initialCapture)'))
+            initial,_=await native_capture(env,paused=True)
             summary['observation_setup_frames']=1
             summary['initial_frame_sha256']=digest(initial)
             frame=initial
             (args.out/'start.png').write_bytes(initial)
-            await env.page.evaluate('window.installLiveControls()')
+            label=('RESUMED practice from '+Path(practice['resume_from']).name if practice and practice['resume_from'] else 'FRESH-START practice') if practice else None
+            await env.page.evaluate('options=>window.installLiveControls(options)',{'frame_cap':practice['segment_frames'] if practice else None,'label':label})
             await env.page.evaluate('game=>{document.title="Jev Atari — "+game;}',game.id)
             print('Browser ready. Click Start Jev; Stop & save ends this single attempt.',flush=True)
             write_phase(args.out,'waiting-for-start')
@@ -92,7 +98,7 @@ async def play(args):
                 await env.page.get_by_role('button',name='Start Jev',exact=True).click()
             await env.page.wait_for_function('window.liveRunning || window.liveStopped',timeout=0)
             write_phase(args.out,'playing')
-            origin=await env.page.evaluate('EJS_emulator.gameManager.getFrameNum()')
+            origin=await env.page.evaluate('window.liveOriginFrame??EJS_emulator.gameManager.getFrameNum()')
             previous=profile.observe(initial)
             previous_frame=origin
             started=time.monotonic()
@@ -103,11 +109,18 @@ async def play(args):
                     if (args.out/'stop.request').exists() or (external_stop and external_stop.exists()):
                         summary['stop_reason']='front-page-user-stop'
                         break
-                    frame,stamp=await raw_capture()
+                    frame,stamp=await native_capture(env)
                     number=stamp.after
                     elapsed=number-origin
                     current=profile.observe(frame)
                     profile.track(previous,current,max(1,number-previous_frame))
+                    evidence=f'frame-{sample:04}.png'
+                    (args.out/evidence).write_bytes(frame)
+                    frame_log.write(json.dumps({'evidence':evidence,'before':stamp.before,'after':stamp.after,'sha256':stamp.sha256})+'\n');frame_log.flush()
+                    sample+=1
+                    if goal and goal.observe(read_score(game.id,frame),stamp,evidence,elapsed):
+                        summary['stop_reason']='practice-target-achieved'
+                        break
                     await env.page.evaluate('o=>window.drawTracking(o)',{**profile.overlay(current),'capture_frame':stamp.before,'source_size':[160,210]})
                     # Three consecutive non-black observations, never a missing
                     # player sprite, are a stop candidate; not a verified death.
@@ -123,8 +136,11 @@ async def play(args):
                     if pending and pending.done():
                         try:
                             decision=pending.result()
-                        except Exception:
+                        except Exception as exc:
                             metrics.failed+=1
+                            summary['safety_fallback']=exc.report if isinstance(exc,SafetyHold) else safety_report(exc)
+                            summary['stop_reason']='inference-safety-hold'
+                            await env.page.evaluate('()=>{window.releaseLive();EJS_emulator.pause();}')
                             raise
                         age=elapsed-request_frame
                         rejection=envelope.reject_reason(number,args.out.name,0)
@@ -156,6 +172,7 @@ async def play(args):
                         pending=None
                     if pending is None and clock.due(elapsed):
                         envelope=DecisionEnvelope(args.out.name,len(records),stamp)
+                        transport.context=envelope.json()
                         request_frame=stamp.before-origin;request_video=time.monotonic()-env.started_wall
                         request_started=time.monotonic();player.decision_timing=clock.state(elapsed)
                         transform=await env.page.evaluate('window.trackingTransform()')
@@ -164,9 +181,6 @@ async def play(args):
                         player.accuracy_evidence=spatial_evidence(current,transform['canvas_rect'],content=transform['content_rect'])
                         pending=asyncio.create_task(player.decide(state,game))
                         metrics.start_request()
-                    (args.out/f'frame-{sample:04}.png').write_bytes(frame)
-                    frame_log.write(json.dumps({'evidence':f'frame-{sample:04}.png','before':stamp.before,'after':stamp.after,'sha256':stamp.sha256})+'\n');frame_log.flush()
-                    sample+=1
                     snapshot=metrics.snapshot(current,elapsed,pending is not None,clock)
                     metrics.write(args.out,snapshot)
                     await env.page.evaluate('text=>{const panel=document.getElementById("metrics");if(panel)panel.textContent=text;}',snapshot['ascii'])
@@ -175,7 +189,7 @@ async def play(args):
             finally:
                 log.close();frame_log.close()
             summary['status']='stopped'
-            summary.setdefault('stop_reason','user-stop')
+            summary.setdefault('stop_reason',await env.page.evaluate('window.liveStopReason||"user-stop"'))
         except BrowserError as exc:
             if env.page.is_closed():
                 summary['status']='stopped'
@@ -191,6 +205,8 @@ async def play(args):
             if not env.page.is_closed():
                 with suppress(BrowserError):
                     await env.page.evaluate('()=>{window.releaseLive?.();EJS_emulator.pause();}')
+                    if 'origin' in locals():
+                        elapsed=await env.page.evaluate('EJS_emulator.gameManager.getFrameNum()')-origin
             if pending:
                 if not pending.done():
                     metrics.cancelled+=1
@@ -203,6 +219,13 @@ async def play(args):
             summary['game_frames']=elapsed
             summary['decisions']=len(records)
             summary['metrics']=metrics.counters()
+            if goal:summary['practice_result']=goal.finish(elapsed)
+            if not env.page.is_closed() and summary['status']=='stopped' and not summary.get('game_over_candidate'):
+                try:
+                    summary['checkpoint']=await capture_checkpoint(env,args.out,metadata,origin,
+                        (practice['base_frames']+summary['observation_setup_frames']) if practice and practice['resume_from'] else 0)
+                except Exception as exc:
+                    summary['checkpoint_error']=f'{type(exc).__name__}: {exc}'
             metrics.write(args.out,metrics.snapshot(previous if 'previous' in locals() else {},elapsed,False,clock))
             (args.out/'summary.json').write_text(json.dumps(summary,indent=2))
             write_phase(args.out,'recording')
@@ -236,6 +259,7 @@ if __name__=='__main__':
     p.add_argument('--stop-file',type=Path,help='Front-page cooperative Stop & save marker')
     p.add_argument('--provider',choices=('ollaya','jev'),default='ollaya',help='Default is local Ollaya CLI; hosted Jev requires explicit selection')
     p.add_argument('--model',help='Provider model name (default kev:0.8b or jev-latest)')
+    p.add_argument('--practice-plan',type=Path,help='Explicit single-segment practice plan; resumes are verified and unranked')
     args=p.parse_args()
     # Counters belong inside the coroutine's local scope.
     asyncio.run(play(args))

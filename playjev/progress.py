@@ -15,7 +15,7 @@ def endpoint(game,current,stamp,origin,evidence_sha256):
     player=current.get('player')
     return {'game':game,'evidence':'final.png','evidence_sha256':evidence_sha256,
             'capture_interval':interval,'player_box':player.get('box') if player else None,
-            'observed_targets':len(current.get('aliens',current.get('bugs',[]))),
+            'observed_targets':len(current.get('aliens',current.get('bugs',current.get('enemies',[])))),
             'pot_row':current.get('pot_row'),'coordinates':current.get('coordinates'),
             'wave':None,'terminal_verified':False,
             'note':'Last captured native-screen position, not an exact death location or verified world/wave progress. Setup-only captures have no gameplay interval.'}
@@ -45,7 +45,8 @@ def load(runs):
             summary=json.loads((directory/'summary.json').read_text())
             key=(summary['game'],summary['challenge_id'])
             entry=groups.setdefault(key,{'game':key[0],'challenge_id':key[1],'best_supported_score':None,'latest':None})
-            if score_supported(directory,summary):
+            # Resumed cumulative scores do not seed fresh-start best-score targets.
+            if not summary.get('practice',{}).get('resume_from') and score_supported(directory,summary):
                 score=summary['score'];best=entry['best_supported_score']
                 entry['best_supported_score']=score if best is None else max(best,score)
             file=directory/'progress.json'

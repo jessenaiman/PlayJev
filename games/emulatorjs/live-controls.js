@@ -1,9 +1,9 @@
 // Code owns frame deadlines and button release. No model can reset the game.
-window.installLiveControls = () => {
+window.installLiveControls = ({frame_cap=null,label=null}={}) => {
     window.liveRunning=false;window.liveStopped=false;window.liveButtons=[];
     window.livePolicyGeneration=0;
     const status=document.getElementById('status');
-    status.textContent='Continuous mode — one attempt. Boxes are observed pixel estimates; dashed paths are predictions.';
+    status.textContent=(label||'Continuous mode — one attempt.')+' Boxes are observed pixel estimates; dashed paths are predictions.';
     const start=document.createElement('button');start.textContent='Start Jev';
     const stop=document.createElement('button');stop.textContent='Stop & save';
     const full=document.createElement('button');full.textContent='Fullscreen';
@@ -14,7 +14,17 @@ window.installLiveControls = () => {
         for(const b of window.liveButtons)EJS_emulator.gameManager.simulateInput(0,b,0);
         window.liveButtons=[];
     };
-    start.onclick=()=>{if(window.liveRunning||window.liveStopped)return;window.liveRunning=true;EJS_emulator.play();};
+    start.onclick=()=>{
+        if(window.liveRunning||window.liveStopped)return;
+        window.liveOriginFrame=EJS_emulator.gameManager.getFrameNum();
+        if(frame_cap!==null){
+            if(!Number.isInteger(frame_cap)||frame_cap<1||frame_cap>36000)throw Error('Invalid practice frame cap');
+            // EmulatorSession's per-frame hook pauses at this exact boundary.
+            window.frameTarget=window.liveOriginFrame+frame_cap;
+            window.finishFrames=()=>{window.releaseLive();window.liveStopReason='practice-frame-cap';window.liveStopped=true;};
+        }
+        window.liveRunning=true;EJS_emulator.play();
+    };
     stop.onclick=()=>{window.releaseLive();EJS_emulator.pause();window.liveStopped=true;};
     window.applyLive=({buttons,rest,frames,deadline,policy_generation})=>{
         window.releaseLive();

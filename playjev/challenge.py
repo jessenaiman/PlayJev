@@ -54,6 +54,7 @@ class GameAdapter(ABC):
     hints: str
     # Player-one HUD crop, normalized to screenshot size.
     score_crop: tuple[float, float, float, float]
+    start_frames = 30
 
     def observation(self, frame, mode):
         result = observe(frame)
@@ -135,7 +136,22 @@ class Crackpots(GameAdapter):
         return crackpots_geometry(frame)
 
 
-GAMES = {g.id: g() for g in (SpaceInvaders, Freeway, Defender, Crackpots)}
+class DigDug(GameAdapter):
+    id = 'dig-dug'
+    rom_name = 'Dig Dug (NA).a26'
+    goal = 'Dig tunnels, face approaching monsters and pump them; avoid contact and falling rocks.'
+    directions = {'up':[4], 'down':[5], 'left':[6], 'right':[7]}
+    actions = {'noop':[], 'fire':[0], **directions, **{k+'+fire':v+[0] for k,v in directions.items()}}
+    hints = 'Four-direction underground digging. Fire pumps in the facing direction. Rocks and enemies are hazards; visible pixel roles are estimates, not RAM truth.'
+    score_crop = (0.85,0.85,0.95,0.90)
+    start_frames = 510  # Explicitly finish the ROM's opening walk into the maze.
+
+    def observation(self, frame, mode):
+        from .digdug import geometry
+        return geometry(frame)
+
+
+GAMES = {g.id: g() for g in (SpaceInvaders, Freeway, Defender, Crackpots, DigDug)}
 
 
 class Player(ABC):
@@ -162,6 +178,8 @@ class JevPlayer(Player):
         return {"request": body, "response": result, "choice": answer["choice"], "confidence": answer["confidence"]}
 
     async def request(self, body):
+        if getattr(self,'practice_context',None) is not None:
+            body['state']={**body['state'],'practice':self.practice_context}
         if getattr(self,'decision_timing',None) is not None:
             from .timing import QUESTION
             body['state']={**body['state'],'decision_clock':self.decision_timing}
@@ -471,7 +489,7 @@ async def create(args):
     args.directory.mkdir(parents=True, exist_ok=False)
     async with EmulatorSession(args.assets, rom, speed=1) as env:
         await env.frames([3], 9, slow=False)
-        await env.frames([], 30, slow=False)
+        await env.frames([], game.start_frames, slow=False)
         snapshot = await env.save()
         (args.directory / "start.state").write_bytes(snapshot)
         # Canonical first frame after restore, also used by every run.
@@ -485,7 +503,8 @@ async def create(args):
                 "assets_sha256": asset_digest(args.assets), "state_sha256": digest(snapshot),
                 "initial_frame_sha256": digest(initial), "budget_frames": round(args.seconds * 60),
                 "ready_state_sha256": digest(ready),
-                "fps": 60, "scoring": "human-confirmed-player-one-high-score-v1"}
+                "fps": 60, "scoring": "human-confirmed-player-one-high-score-v1",
+                "start_script":{'reset_frames':9,'released_intro_frames':game.start_frames}}
     metadata = {**contract, "challenge_id": digest(json.dumps(contract, sort_keys=True).encode()),
                 "rom_path": str(rom.resolve()), "assets_path": str(args.assets.resolve())}
     (args.directory / "challenge.json").write_text(json.dumps(metadata, indent=2))
@@ -502,9 +521,10 @@ def replay_html(directory, summary, records):
 <script>const data=""" + payload + """;
 const video=document.getElementById('video'), info=document.getElementById('info');
 document.getElementById('meta').textContent=JSON.stringify(data.summary,null,2);
-if(data.summary.playback_mode==='continuous')document.querySelector('h1').textContent='Continuous Atari replay — asynchronous Jev decisions';
+if(data.summary.playback_mode?.startsWith('continuous'))document.querySelector('h1').textContent='Continuous Atari replay — asynchronous Jev decisions';
 document.getElementById('outcome').textContent=data.summary.game_over_candidate?'Stopped or padded after a suspected game over; visual review required.':data.summary.status==='complete'?'Test frame budget reached. This does not mean the game was completed.':'Test ended before its frame budget.';
-if(data.summary.playback_mode==='continuous')document.getElementById('outcome').textContent=data.summary.game_over_candidate?'Stopped at a suspected game over; not automatically verified.':'Stopped by user or explicit smoke-test cap. No game-completion claim.';
+if(data.summary.playback_mode?.startsWith('continuous'))document.getElementById('outcome').textContent='Stop reason: '+(data.summary.stop_reason||'unknown')+'. No game-completion claim.';
+if(data.summary.practice)document.querySelector('h1').textContent+=' — unranked '+(data.summary.practice.resume_from?'resumed':'fresh-start')+' practice';
 document.getElementById('speed').onchange=e=>video.playbackRate=Number(e.target.value);
 function index(){let i=0;data.records.forEach((r,j)=>{if(r.video_time_s<=video.currentTime)i=j});return i}
 video.ontimeupdate=()=>{const r=data.records[index()];info.textContent=r?JSON.stringify({step:r.step,game_time_s:r.game_frame/60,action:r.decision.choice,confidence:r.decision.confidence,gates:r.decision.components,guard:r.decision.guard,terminal_hold:r.decision.terminal_hold,executed_segments:r.executed_segments,inference_s:r.latency_s,frames:r.frames},null,2):'No decisions recorded'};

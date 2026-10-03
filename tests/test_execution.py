@@ -64,3 +64,14 @@ class BrowserControlsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.apply(frames=31))['reason'],'invalid-duration')
         await self.page.evaluate('window.liveStopped=true')
         self.assertEqual((await self.apply())['reason'],'stopped')
+
+    async def test_practice_cap_is_pinned_to_start_frame_and_releases(self):
+        await self.page.evaluate('installLiveControls({frame_cap:60,label:"RESUMED practice"})')
+        await self.page.get_by_role('button',name='Start Jev',exact=True).last.click()
+        self.assertEqual(await self.page.evaluate('window.frameTarget'),160)
+        self.assertEqual(await self.page.evaluate('window.liveOriginFrame'),100)
+        await self.apply()
+        await self.page.evaluate('window.frame=160;window.finishFrames()')
+        self.assertTrue(await self.page.evaluate('window.liveStopped'))
+        self.assertEqual(await self.page.evaluate('window.liveStopReason'),'practice-frame-cap')
+        self.assertEqual(await self.page.evaluate('window.liveButtons'),[])

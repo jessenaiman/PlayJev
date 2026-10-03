@@ -18,6 +18,8 @@ from .runtime import registry
 from .scoreboard import load_groups
 from .transports import inference
 from .progress import load as load_progress, next_target
+from .practice import plan as practice_plan
+from .checkpoints import verify as verify_checkpoint
 
 
 def catalog(root=ROOT):
@@ -100,7 +102,35 @@ class Arcade:
                 except (OSError,ValueError):pass
         return {'games':[{k:v for k,v in e.items() if k!='challenge'} for e in catalog(self.root)],
                 'scores':self.scores(),'active':active,'recommendation':recommendation,'inference':selected,
-                'progress':load_progress(p.parent for p in (self.root/'runs').rglob('summary.json'))}
+                'progress':load_progress(p.parent for p in (self.root/'runs').rglob('summary.json')),
+                'checkpoints':self.checkpoints()}
+
+    def checkpoints(self):
+        result=[]
+        for entry in catalog(self.root):
+            if not entry['available']:continue
+            try:metadata=json.loads((entry['challenge']/'challenge.json').read_text())
+            except (OSError,ValueError,KeyError,TypeError):continue
+            for file in (self.root/'runs').rglob('checkpoint.json'):
+                try:
+                    row=verify_checkpoint(file.parent,metadata)
+                    result.append({'game':entry['id'],'run':file.parent.relative_to(self.root/'runs').as_posix(),
+                                   'frames':row['logical_frames'],'image':f'/runs/{file.parent.relative_to(self.root/"runs").as_posix()}/checkpoint.png'})
+                except (OSError,ValueError,KeyError,TypeError):continue
+        return sorted(result,key=lambda r:r['run'],reverse=True)
+
+    def start_practice(self,game_id,increment,metric,cap_frames,resume_run=None):
+        entry=next((e for e in catalog(self.root) if e['id']==game_id and e['available']),None)
+        if not entry:raise ValueError('No available challenge for this game')
+        source=None
+        if resume_run:
+            if not isinstance(resume_run,str):raise ValueError('Invalid resume run')
+            source=(self.root/'runs'/resume_run).resolve()
+            if not source.is_relative_to((self.root/'runs').resolve()):raise ValueError('Resume run must remain inside local runs')
+        value=practice_plan(json.loads((entry['challenge']/'challenge.json').read_text()),
+                            (p.parent for p in (self.root/'runs').rglob('summary.json')),
+                            increment,metric,cap_frames,source)
+        return self.start(game_id,practice=value)
 
     def practice_target(self,game_id,increment):
         entry=next((e for e in catalog(self.root) if e['id']==game_id and e['available']),None)
@@ -143,7 +173,7 @@ class Arcade:
             self.last_recommendation=record
         return record
 
-    def start(self,game_id):
+    def start(self,game_id,practice=None):
         entry=next((e for e in catalog(self.root) if e['id']==game_id and e['available']),None)
         if not entry:raise ValueError('Game is not available for continuous play')
         with self.lock:
@@ -154,11 +184,19 @@ class Arcade:
             name=f'arcade-{game_id}-{datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")}-{secrets.token_hex(3)}'
             out=self.root/'runs'/name
             logs=self.root/'runs'/'arcade-processes';logs.mkdir(parents=True,exist_ok=True)
+            extra=[]
+            if practice:
+                # Revalidate the selected challenge if the catalog changed meanwhile.
+                from .practice import validate
+                validate(practice,json.loads((entry['challenge']/'challenge.json').read_text()))
+                file=logs/f'{name}.practice.json';file.write_text(json.dumps(practice,indent=2))
+                extra=['--practice-plan',str(file)]
             with (logs/f'{name}.log').open('w') as log:
                 self.process=subprocess.Popen([sys.executable,'-m','playjev.live',str(entry['challenge']),
                     '--out',str(out),'--autostart','--stop-file',str(logs/f'{name}.stop.request'),
-                    '--provider',self.provider,'--model',self.model],cwd=self.root,stdout=log,stderr=subprocess.STDOUT)
+                    '--provider',self.provider,'--model',self.model,*extra],cwd=self.root,stdout=log,stderr=subprocess.STDOUT)
             self.active={'game':game_id,'run':name,'pid':self.process.pid,'provider':self.provider,'model':self.model,'started_at':datetime.now(timezone.utc).isoformat()}
+            if practice:self.active['practice']={k:practice[k] for k in ('metric','target','segment_frames','resume_from')}
             return self.active
 
     def stop(self):
@@ -222,6 +260,7 @@ def handler(app):
                 if path=='/api/stop':return self.send(app.stop(),202)
                 if path=='/api/inference':return self.send(app.configure_inference(body.get('provider'),body.get('model')))
                 if path=='/api/practice-target':return self.send(app.practice_target(body.get('game'),body.get('increment')))
+                if path=='/api/practice-start':return self.send(app.start_practice(body.get('game'),body.get('increment'),body.get('metric'),body.get('cap_frames'),body.get('resume_run')),202)
                 self.send({'error':'Not found'},404)
             except httpx.HTTPStatusError as exc:
                 status=exc.response.status_code

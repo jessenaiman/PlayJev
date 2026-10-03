@@ -81,7 +81,7 @@ class ChallengeTests(unittest.TestCase):
             asyncio.run(ComposedJevPlayer().decide({}, GAMES["freeway"]))
 
     def test_actions(self):
-        self.assertEqual(set(GAMES), {"space-invaders", "freeway", "defender", "crackpots"})
+        self.assertEqual(set(GAMES), {"space-invaders", "freeway", "defender", "crackpots", "dig-dug"})
         for game in GAMES.values():
             decision = asyncio.run(BaselinePlayer("fixed").decide({}, game))
             self.assertIn(decision["choice"], game.actions)

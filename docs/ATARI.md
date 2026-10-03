@@ -6,7 +6,9 @@ has an explicit hosted Jev provider switch. See [testing](TESTING-ATARI.md) and
 [the front page](ARCADE.md). This adapts PlayJev's observe/choose/execute loop; it is not its trained
 pixel policy, and comparable game performance has not been established.
 
-Games: **Space Invaders**, **Freeway**, **Defender**, and **Crackpots** (player one). Use your own ROMs.
+Games: **Space Invaders**, **Freeway**, **Defender**, **Crackpots**, and experimental
+**[Dig Dug](DIG-DUG.md)** (player one). Use your own ROMs. Dig Dug score/terminal
+calibration and usable discovered-profile control are still pending.
 
 ### Important: `playjev.challenge` is the paused-inference benchmark
 

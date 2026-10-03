@@ -90,7 +90,7 @@ It shows evidence-linked scores, uses typed judgments to locate a playable game,
 continuous attempt on your click. Live ASCII metrics appear beside the game and on
 the front page. [Outstanding work and iteration order](docs/ATARI-TASKS.md).
 
-The added [Atari challenge runner](docs/ATARI.md) supports **Space Invaders, Freeway, Defender and Crackpots**,
+The added [Atari challenge runner](docs/ATARI.md) supports **Space Invaders, Freeway, Defender, Crackpots and experimental Dig Dug**,
 slow live watching, recorded replays, saved-state/frame-budget challenges, and experiments.
 Development defaults to the **Ollaya CLI**, with a score-page provider toggle for
 explicit hosted Jev use. [Testing and upstream compatibility](docs/TESTING-ATARI.md).

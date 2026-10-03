@@ -27,12 +27,33 @@ The score page now shows the last captured endpoint and stop cause for new attem
 frame interval. This is not necessarily the exact point of death: a browser stop can
 occur after the last observation. Waves/world distance and terminal proof stay unknown.
 
-Set **Score increment X**, then **Preview best + X goal**. For example, Crackpots'
+Set **Increment X**, then **Preview best score + X goal**. For example, Crackpots'
 supported 690 and X=100 preview a 790-point practice goal. The baseline is drawn only
 from unchanged score evidence for the selected challenge. Unknown scores stay unknown,
 and failed attempts do not automatically ratchet the goal upward. Preview requests
 are logged locally, make no inference call and do not launch/resume or change budgets.
-Automatic target execution and checkpoint practice are still queued.
+Choose **Practice metric**, **Segment cap (frames)** and **Start state**, then click
+**Start next practice segment**. Score mode stops at two independent exact HUD
+observations meeting the target, or the frame cap. Unknown baselines refuse score
+practice. Frame mode extends a measured continuation/budget target by X; it is not
+survival, cleared terrain, wave progress or completion evidence. A cap can prevent
+reaching the goal; this is reported as not achieved, not silently treated as success.
+
+Each click launches one segment, not an automatic batch. Fresh and resumed practice
+have separate playback modes and are always unranked. Resumed cumulative scores do
+not seed fresh-start score goals. Providers remain pinned for an active attempt.
+
+Compatible stopped attempts now save `checkpoint.state`, `checkpoint-ready.state`,
+`checkpoint.png` and a hash-bound manifest. The checkpoint is taken after model inputs
+are released/paused, then canonicalized with four disclosed setup callbacks; it can
+be later than the last captured endpoint. Resuming verifies game/challenge/ROM/assets,
+all checkpoint hashes and the exact restored canonical state before Start. Failed or
+suspected-terminal sources cannot resume. Unknown terminal state is still unknown;
+no resume is permission to reset. The resumed initial observation adds one disclosed
+setup frame, separate from the segment budget. Checkpoint continuation counts include
+normalization/setup frame-counter changes; do not confuse them with completed play.
+
+See [Dig Dug discovery and classification](DIG-DUG.md) for the new experimental game.
 
 ## Reuse boundaries
 
@@ -54,6 +75,12 @@ Automatic target execution and checkpoint practice are still queued.
   ASCII objects. Both the game-side panel and front page consume it.
 - `progress.py`: evidence-bound endpoints and practice goal previews. It has no
   controller/reset/resume authority and does not alter leaderboard eligibility.
+- `practice.py` / `checkpoints.py`: explicit bounded practice plans, independent HUD
+  goal checks and canonical local checkpoint verification.
+- `native.py`: one timeout-bounded native capture contract for live play, checkpoint
+  images and paused diagnostics, eliminating duplicated screenshot-Promise handling.
+- `discovery.py`: repeatable initial-load pixel probes and typed object-role hypotheses.
+  Discovery does not train model weights or automatically activate a controller.
 
 The initial observation now also uses the raw core screenshot, processed through
 one recorded setup frame. Live browser contexts allow the viewport to resize rather
@@ -65,8 +92,19 @@ Unsupported/missing renderer transforms suppress the overlay instead of guessing
 
 ## Recorded checks for this iteration
 
-- 47 offline regression tests passed, including exact HUD lookup, duplicate-final
+- 75 offline regression tests passed, including exact HUD lookup, duplicate-final
   exclusion and independent/overlapping capture-interval scoring checks.
+- Fresh/resumed browser practice segments stopped at exactly 120 frames; a clipped
+  fresh goal was correctly not achieved. The latest resume retained its exact cancelled
+  request, video and checkpoint. Three responsive layouts passed with no client errors.
+- Seven paired fixed-input checkpoint traces matched both native image and canonical
+  state hashes. These paused calibration traces invoked no inference service.
+- A 600-frame resumed Dig Dug local trial completed two replies 258/215 frames late;
+  both were rejected, zero actions applied, a third request cancelled. This is not a
+  successful high-score attempt. Dig Dug HUD and terminal calibration remain pending.
+- Discovery produced 16 repeatable candidates, but Kev's low-confidence role results
+  were unusable. The classifier now retains hypotheses and falls back to observation
+  only; it does not invoke hosted Jev or activate an unverified profile.
 - Eight paused restored-frame rendered-pixel checks at four sizes and 1×/2× DPR:
   maximum gardener-box error 0.85 CSS pixels. This does not certify all live sprites.
 - Score-page provider toggles/layouts verified with no inference on load or switch;
@@ -100,7 +138,8 @@ artifacts inside `runs/` are served, not ROMs, `.env`, savestates or arbitrary f
 The hosted API key stays in Python. The page is not ready for public deployment.
 
 Crackpots game-over detection, validated full-attempt ranking, Ollaya alternating
-turns, the next game adapters and vision-model cookbook research remain pending.
+turns, Dig Dug scoring/terminal/discovered-controller calibration, other game adapters
+and vision-model cookbook research remain pending.
 See [the task list](ATARI-TASKS.md).
 The planned [vision fallback and jev-router-inspired routing](VISION-ROUTING.md)
 documents automatic/free-LLM model selection, which is not implemented yet. Manual

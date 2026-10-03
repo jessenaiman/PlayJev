@@ -23,7 +23,8 @@ def score_supported(directory, row):
 
 
 def eligible(directory, row):
-    return (row.get("status") == "complete" and row.get("budget_frames") is not None
+    return (not row.get('practice') and row.get('playback_mode') not in ('continuous-practice-fresh','continuous-practice-resumed')
+            and row.get("status") == "complete" and row.get("budget_frames") is not None
             and row.get("game_frames") == row.get("budget_frames") and score_supported(directory,row))
 
 

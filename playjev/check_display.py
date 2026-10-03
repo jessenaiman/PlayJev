@@ -12,6 +12,7 @@ from PIL import Image
 from .challenge import EmulatorSession, digest
 from .crackpots import geometry, overlay
 from .spatial import evidence
+from .native import capture
 
 
 def gold_box(image, expected, margin=12):
@@ -43,12 +44,7 @@ async def check(args):
             for width,height in ((640,480),(960,540),(390,844),(1440,900)):
                 await env.page.set_viewport_size({'width':width,'height':height})
                 await env.restore_matching(snapshot,metadata['ready_state_sha256'])
-                # Return immediately: the paused core processes this command in
-                # the explicitly measured setup frame below. Returning its Promise
-                # here would make Playwright await a frame that cannot yet advance.
-                await env.page.evaluate('()=>{window.probe=EJS_emulator.gameManager.screenshot();}')
-                await env.frames([],1,slow=False)
-                raw=bytes(await env.page.evaluate('async()=>Array.from(await Promise.race([window.probe,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Probe screenshot timed out")),3000))]))'))
+                raw,_=await capture(env,paused=True)
                 current=geometry(raw)
                 await env.page.evaluate('o=>window.drawTracking(o)',overlay(current))
                 # Let renderer and ResizeObserver settle at this paused state.

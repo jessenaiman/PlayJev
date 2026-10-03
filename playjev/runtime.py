@@ -64,6 +64,7 @@ def crackpots_prepare(current,decision):
 def registry():
     from .crackpots import geometry as crackpots_geometry, overlay, CrackpotsPlayer
     from .crackpots_score import collect as crackpots_collect
+    from . import digdug
     return {
         'space-invaders':LiveGame('space-invaders','continuous-compact-v1',geometry,invaders_track,
             lambda current:current,invaders_prepare,lambda current:not current['background_black'],
@@ -71,4 +72,7 @@ def registry():
         'crackpots':LiveGame('crackpots','crackpots-interception-v2',crackpots_geometry,crackpots_track,
             overlay,crackpots_prepare,lambda current:False,CrackpotsPlayer,crackpots_collect,
             'crackpots.py','not-yet-validated; use Stop & save'),
+        'dig-dug':LiveGame('dig-dug','experimental-digdug-native-candidates-v1',digdug.geometry,digdug.track,
+            digdug.overlay,digdug.prepare,lambda current:False,digdug.DigDugPlayer,digdug.collect,
+            'digdug.py','experimental: score, rocks/ghosts and game-over detection uncalibrated; fire requires active-play evidence'),
     }

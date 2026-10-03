@@ -24,6 +24,11 @@ Latest recorded upstream random check: 1,600 environment steps, 689 steps/s, fou
 episodes ended, mean completed-episode score 187.50. This is a short throughput
 check, not a reproduction of the published 16-episode policy evaluation.
 
+Current regression checkpoint: **75 tests passed**, including mocked live allocation
+failure (input release + recording preservation), observation-only discovery fallback,
+native captures, checkpoint tampering and bounded progression. No inference service
+is called by the regression suite.
+
 Upstream reports Space Invaders 400 for its pixel policy and teacher on held-out
 HTML-game episodes, with random 215 in the published table. The model reads the
 frame and options, not HTML or teacher `info()`. Never compare those numbers to
@@ -69,6 +74,33 @@ The recorded provider is used for the entire attempt. Hosted regression checks a
 not part of the default test command. The older `playjev.challenge run --player jev...`
 benchmark commands also spend hosted quota; local Invaders uses `--player ollaya-gates`.
 
+## Practice/resume and discovery checks
+
+Use a fresh output directory/plan filename:
+
+```bash
+.venv/bin/python -m playjev.practice runs/dig-dug-tunnel-v1 \
+  --out-plan runs/my-practice-plan.json --metric frames --increment 120 \
+  --cap-frames 120 --resume-from runs/dig-dug-resume-smoke-v1
+.venv/bin/python -m playjev.live runs/dig-dug-tunnel-v1 \
+  --out runs/my-resumed-practice --practice-plan runs/my-practice-plan.json \
+  --provider ollaya --autostart
+.venv/bin/python -m playjev.check_resume runs/dig-dug-tunnel-v1 \
+  runs/dig-dug-resume-smoke-v1 --out runs/my-resume-check
+```
+
+The last command makes no inference call. It replays seven fixed input segments
+twice and compares image/state hashes. It is paused control calibration, not a score.
+The earlier commands explicitly invoke local inference during one capped practice
+segment. A frame-budget achievement is not proof of survival, cleared terrain or a win.
+
+Discovery/classification is a separate workflow; see [DIG-DUG.md](DIG-DUG.md).
+Initial probes restore before each input, with two native-capture setup frames per
+probe. Typed classification is opt-in (`--provider ollaya` by default); unusable roles
+or inference limits save a safety hold/observation-only report. No automatic hosted
+fallback or controller activation occurs. An explicit `--provider jev` classification
+retry spends hosted quota; do not include it in routine regressions.
+
 ## Current local findings, not successes
 
 - The exact recorded five-question gameplay request passed sequential Ollaya CLI
@@ -83,6 +115,16 @@ benchmark commands also spend hosted quota; local Invaders uses `--player ollaya
 - Some live local contexts still exhaust GPU memory. Failed runs preserve recordings,
   failure counters and unranked summaries. These are transport/model-performance
   blockers, not permission to quietly use hosted Jev.
+- Dig Dug 600-frame continuation: 3 requests, 2 completed (4.24/3.53 s), 2 stale,
+  1 cancelled, zero applied. Exact logical requests/responses/cancellations are saved
+  in `inference.jsonl`, even when no completed decision row exists.
+- Initial-load Dig Dug probes were repeatable across two six-input traces. Miner
+  response was up to 4 horizontal/8 vertical pixels per 30-frame probe in those samples.
+  These empirical ranges are not guaranteed future speed bounds.
+- Kev classified every candidate as enemy with confidence approximately 0.15–0.18.
+  A larger combined strategy request failed a 253,755,392-byte GPU allocation.
+  With the abstention safety policy, these roles remain unknown and strategy inference
+  is skipped. Improving transport reliability does not validate semantic accuracy.
 
 Latency and allocation must improve before local high-score comparisons are meaningful.
 The provider switch is working; effective local gameplay is not yet established.
