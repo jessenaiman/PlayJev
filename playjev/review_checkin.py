@@ -31,16 +31,16 @@ async def review(args):
     branch=command(['git','branch','--show-current'])['stdout'].strip()
     remote=command(['git','remote','get-url','fork'])['stdout'].strip()
     checks={}
-    for name in ('browser-check.json','resize-check.json','provider-toggle-check.json','display-check-v1/display-check.json'):
+    for name in ('browser-check.json','resize-check.json','provider-toggle-check.json','display-check-v1/display-check.json','progress-check.json'):
         file=ROOT/'runs'/'arcade-processes'/name
         checks[name]=json.loads(file.read_text()) if file.is_file() else {'missing':True}
     smoke=ROOT/'runs'/'arcade-ollaya-cli-smoke-v1'/'summary.json'
-    packet={'requested_scope':'Local arcade front page, shared adapters/scoring, responsive native coordinates, combined timing/accuracy gates, metrics and task list. Prototype release, not completion of pending features.',
+    packet={'requested_scope':'Local arcade front page, shared adapters/scoring, viewport mapping, timing/accuracy gates, metrics and task list; last-observed endpoint ledger and score goal previews. No automatic progressive execution or checkpoint resumes. Prototype release, not completion of pending features.',
             'user_authorized_push':args.authorized,'staged_files':names,'diff_stat':command(['git','diff','--cached','--stat']),
             'tests':tests,'whitespace':whitespace,'branch':branch,'remote':remote,'browser_checks':checks,
             'smoke':json.loads(smoke.read_text()) if smoke.is_file() else {'missing':True},
             'artifact_guard':{'forbidden_paths':forbidden,'exact_credential_found':secret_match},
-            'known_limits':['Crackpots game-over unvalidated','Ollaya GPU setup blocked','Native alternating-player mode pending','New games and vision cookbook queued','Separate game window, not inline hosted roster'],
+            'known_limits':['Crackpots game-over unvalidated','Ollaya GPU/latency limits block effective real-time play','Native alternating-player mode pending','New games and vision cookbook queued','Separate game window, not inline hosted roster','Practice goals are previews only; world/wave progress and automatic execution are not calibrated'],
             'at':datetime.now(timezone.utc).isoformat()}
     browser=checks['browser-check.json'];resize=checks['resize-check.json']
     launch=browser.get('live_launch_test',{})
@@ -50,6 +50,8 @@ async def review(args):
     packet['required_evidence_checks']={'browser_launch_stop_video':bool(browser_ok),'identical_source_across_sizes':bool(resize_ok),'live_requests_observed':packet['smoke'].get('metrics',{}).get('requests',0)>0,
         'rendered_alignment':display.get('passed') is True and len(display.get('checks',[]))>=8 and all(c['max_error_css_pixels']<=2 for c in display.get('checks',[])),
         'provider_toggle_no_inference':toggle.get('no_inference_on_load_or_toggle') is True and toggle.get('live',{}).get('active_provider_pinned_on_toggle') is True and toggle.get('live',{}).get('video_saved') is True}
+    progress=checks['progress-check.json']
+    packet['required_evidence_checks']['practice_tracking_preview']=progress.get('endpoint_visible') is True and progress.get('no_recommendation_inference') is True and progress.get('endpoint',{}).get('capture_interval') is not None
     deterministic_ok=bool(names) and not forbidden and not secret_match and tests['returncode']==0 and whitespace['returncode']==0 and branch!='main' and remote=='https://github.com/jessenaiman/PlayJev.git' and args.authorized and all(packet['required_evidence_checks'].values())
     packet['deterministic_checks_pass']=deterministic_ok
     # Exact full evidence is retained locally. Give the verifier a bounded summary

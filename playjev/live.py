@@ -14,6 +14,7 @@ from .timing import DecisionClock
 from .spatial import evidence as spatial_evidence
 from .execution import FrameStamp, DecisionEnvelope
 from .transports import inference, ollaya_manifest
+from .progress import endpoint, save as save_progress
 
 
 async def play(args):
@@ -48,7 +49,7 @@ async def play(args):
     if provider=='ollaya':
         summary['config']['model_manifest']=await ollaya_manifest(model)
     summary['config']['source_sha256']={name:digest((ROOT/'playjev'/name).read_bytes())
-        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py',profile.source)}
+        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py','progress.py',profile.source)}
     summary['config']['display_sha256']={name:digest((ROOT/'games/emulatorjs'/name).read_bytes())
         for name in ('index.html','live-controls.js')}
     async with EmulatorSession(assets,rom,True,args.out/'video',1,responsive=True) as env:
@@ -197,6 +198,8 @@ async def play(args):
                 await asyncio.gather(pending,return_exceptions=True)
             if frame is not None:
                 (args.out/'final.png').write_bytes(frame)
+                summary['endpoint']=endpoint(game.id,profile.observe(frame),stamp if 'stamp' in locals() else None,
+                                             origin if 'origin' in locals() else 0,digest(frame))
             summary['game_frames']=elapsed
             summary['decisions']=len(records)
             summary['metrics']=metrics.counters()
@@ -207,6 +210,7 @@ async def play(args):
     if videos:videos[0].rename(args.out/'replay.webm')
     from .challenge import replay_html
     replay_html(args.out,summary,records)
+    save_progress(args.out)  # retain endpoint even if subsequent HUD review fails
     if (args.out/'final.png').exists():
         write_phase(args.out,'scoring')
         try:
@@ -218,6 +222,7 @@ async def play(args):
             write_phase(args.out,'failed',error=summary['score_error'])
             raise
     write_phase(args.out,'failed' if summary.get('error') else 'saved',error=summary.get('error'))
+    save_progress(args.out)
     if summary.get('error'):
         raise RuntimeError(summary['error'])
 

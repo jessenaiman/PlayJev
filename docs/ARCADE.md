@@ -20,6 +20,20 @@ review; the game window also has its own controls. No default test duration or b
 loop is introduced. The HTTP server permits one owned attempt at a time, not a
 machine-wide lock against separately launched command-line sessions.
 
+## Progressive practice
+
+The score page now shows the last captured endpoint and stop cause for new attempts.
+`progress.json` binds the native player box/target count to `final.png` and a capture
+frame interval. This is not necessarily the exact point of death: a browser stop can
+occur after the last observation. Waves/world distance and terminal proof stay unknown.
+
+Set **Score increment X**, then **Preview best + X goal**. For example, Crackpots'
+supported 690 and X=100 preview a 790-point practice goal. The baseline is drawn only
+from unchanged score evidence for the selected challenge. Unknown scores stay unknown,
+and failed attempts do not automatically ratchet the goal upward. Preview requests
+are logged locally, make no inference call and do not launch/resume or change budgets.
+Automatic target execution and checkpoint practice are still queued.
+
 ## Reuse boundaries
 
 - `runtime.py`: registration of observation, tracking, overlays, latest-state control
@@ -38,6 +52,8 @@ machine-wide lock against separately launched command-line sessions.
   the gameplay/timing request and are not substitutes for pixel or arithmetic tests.
 - `metrics.py`: measured calls/applied actions/vetoes/stale results/usage and inferred
   ASCII objects. Both the game-side panel and front page consume it.
+- `progress.py`: evidence-bound endpoints and practice goal previews. It has no
+  controller/reset/resume authority and does not alter leaderboard eligibility.
 
 The initial observation now also uses the raw core screenshot, processed through
 one recorded setup frame. Live browser contexts allow the viewport to resize rather
@@ -55,6 +71,10 @@ Unsupported/missing renderer transforms suppress the overlay instead of guessing
   maximum gardener-box error 0.85 CSS pixels. This does not certify all live sprites.
 - Score-page provider toggles/layouts verified with no inference on load or switch;
   early-stop integration preserved an Ollaya attempt when the page selected Jev.
+- Progressive practice browser check: 690 + 100 = 790 preview, saved native endpoint
+  at capture frames 45–48 with player `[30,24,36,40]`, and endpoint visible after
+  Stop & save. Layouts passed at 390×844, 960×540 and 1440×900. No recommendation
+  inference was invoked. New regression coverage is additional to the code checkpoint.
 - Front page: reviewed 690/1,640 scores visible; real hosted Jev recommended Crackpots.
 - Layout checks: 390×844, 768×1024, 1440×900 and 3440×1440.
 - At 390×844, 1440×900 and 3440×1440 the restored core PNG was identically 160×210

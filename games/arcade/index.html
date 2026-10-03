@@ -13,6 +13,9 @@
 <div class="layout"><section><h2>Choose a game</h2><div class="cards" id="games"></div>
 <h2>High scores & reviewed attempts</h2><p class="small">Ranked benchmarks and unranked live attempts are separate. Confidence is not a score. Game-over detection is still being calibrated.</p>
 <div class="scores"><table><thead><tr><th>Game</th><th>Score</th><th>Result</th><th>Mode / challenge</th><th>Player</th><th>Evidence</th></tr></thead><tbody id="scores"></tbody></table></div>
+<h2>Practice progress</h2><pre id="progress">No endpoint recorded yet.</pre>
+<div class="intent"><label>Game <select id="practice-game"></select></label><label>Score increment X <input id="practice-increment" type="number" min="1" max="100000" value="100" style="width:110px"></label><button id="practice-preview">Preview best + X goal</button></div>
+<p class="small" id="practice-goal">Preview only: no automatic launch, resume, budget change or leaderboard mixing.</p>
 <h2>Next integrations</h2><p>Dig Dug · Pitfall · Asteroids — adapters pending. Jev/Ollaya alternating turns — blocked pending a working local inference setup.</p></section>
 <aside><h3>Live Jev processes</h3><pre id="metrics">[ NO ACTIVE ATTEMPT ]
 
@@ -28,6 +31,12 @@ async function post(path,body){const r=await fetch(path,{method:'POST',headers:{
 function render(){
  $('provider').textContent=(state.inference?.provider==='jev'?'HOSTED JEV':'OLLAYA CLI')+' · '+(state.inference?.model||'unknown')+' · NO HIDDEN RESETS';
  $('inference-provider').value=state.inference?.provider||'ollaya';
+ const practiceGame=$('practice-game').value;$('practice-game').replaceChildren();
+ for(const g of state.games.filter(g=>g.available)){const option=text('option',g.title);option.value=g.id;$('practice-game').append(option)}
+ if(state.games.some(g=>g.id===practiceGame&&g.available))$('practice-game').value=practiceGame;
+ else if(state.games.some(g=>g.id==='crackpots'&&g.available))$('practice-game').value='crackpots';
+ const endpoints=(state.progress||[]).filter(p=>p.latest);
+ $('progress').textContent=endpoints.length?endpoints.map(p=>{const r=p.latest,e=r.endpoint;return p.game+' · '+r.stop_reason+'\nlast observed frame '+(e.capture_interval?.game_after??'setup only')+' · player '+JSON.stringify(e.player_box)+' · targets '+e.observed_targets+'\nbest supported score '+(p.best_supported_score??'unknown')+' · '+r.run;}).join('\n\n'):'No endpoint recorded yet. New attempts will retain their last observed position and stop evidence.';
  $('games').replaceChildren();
  for(const g of state.games){const c=text('div','');c.className='card'+(selected===g.id?' selected':'');c.append(text('h3',g.title),text('p',g.goal));const note=text('p',g.available?'Continuous adapter ready':'Continuous adapter/setup pending');note.className='badge';c.append(note);const b=text('button','Start '+g.title);b.className='primary';b.disabled=!g.available||!!state.active?.running;b.onclick=async()=>{b.disabled=true;try{const v=await post('/api/start',{game:g.id});$('navigation').textContent='Opening '+g.title+' · one attempt · '+v.run;await refresh()}catch(e){$('navigation').textContent=e.message}};c.append(b);$('games').append(c)}
  $('scores').replaceChildren();
@@ -40,6 +49,7 @@ async function refresh(){const r=await fetch('/api/state');if(!r.ok)throw Error(
 async function recommend(){if(pending)return;pending=true;$('recommend').disabled=true;$('navigation').textContent='Jev is locating a playable game…';try{const r=await post('/api/recommend',{intent:$('intent').value});selected=r.choice==='wait'?null:r.choice;$('navigation').textContent='Jev: '+r.choice+' · '+r.readiness+' · confidence '+(r.confidence??0).toFixed(2)+' — click Start for one visible attempt.';render()}catch(e){$('navigation').textContent='Jev navigation unavailable: '+e.message}finally{pending=false;$('recommend').disabled=false}}
 $('recommend').onclick=recommend;$('stop').onclick=async()=>{try{await post('/api/stop',{});$('navigation').textContent='Stop requested. Waiting for video and score evidence to finish.'}catch(e){$('navigation').textContent=e.message}};
 $('inference-provider').onchange=async()=>{const control=$('inference-provider');control.disabled=true;try{const r=await post('/api/inference',{provider:control.value});selected=null;$('navigation').textContent='Provider selected: '+r.provider+' · '+r.model+'. No inference called. Click Recommend or Start; any running attempt keeps its provider.';await refresh()}catch(e){$('navigation').textContent=e.message}finally{control.disabled=false}};
+$('practice-preview').onclick=async()=>{try{const r=await post('/api/practice-target',{game:$('practice-game').value,increment:Number($('practice-increment').value)});$('practice-goal').textContent=r.target===null?'Baseline score is unknown; record supported evidence before setting a best + X goal.':r.game+' practice goal: '+r.previous_best+' + '+r.increment+' = '+r.target+'. Preview only; does not launch/resume or change the attempt budget.'}catch(e){$('practice-goal').textContent=e.message}};
 refresh().then(()=>$('navigation').textContent='Choose a provider, then ask for a recommendation or start one visible attempt.').catch(e=>$('navigation').textContent=e.message);
 setInterval(()=>refresh().catch(()=>{}),3000);
 </script></html>

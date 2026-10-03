@@ -21,6 +21,13 @@ def choice(value,options):
 
 
 class ArcadeTests(unittest.TestCase):
+    def test_disconnected_viewer_does_not_trigger_a_second_response(self):
+        cls=handler(Arcade());connection=cls.__new__(cls)
+        connection.send_response=Mock();connection.send_header=Mock();connection.end_headers=Mock()
+        connection.wfile=Mock();connection.wfile.write.side_effect=BrokenPipeError()
+        connection.send({'status':'saved'})
+        connection.send_response.assert_called_once_with(200)
+
     def test_clock_measured_by_code_and_bounded_by_judgment(self):
         c=DecisionClock();self.assertTrue(c.due(0))
         c.restart(10,choice('wait',INTERVALS))

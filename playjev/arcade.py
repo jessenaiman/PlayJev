@@ -17,6 +17,7 @@ from .challenge import ROOT, GAMES, JevPlayer
 from .runtime import registry
 from .scoreboard import load_groups
 from .transports import inference
+from .progress import load as load_progress, next_target
 
 
 def catalog(root=ROOT):
@@ -98,7 +99,21 @@ class Arcade:
                 try:active['metrics']=json.loads(path.read_text())
                 except (OSError,ValueError):pass
         return {'games':[{k:v for k,v in e.items() if k!='challenge'} for e in catalog(self.root)],
-                'scores':self.scores(),'active':active,'recommendation':recommendation,'inference':selected}
+                'scores':self.scores(),'active':active,'recommendation':recommendation,'inference':selected,
+                'progress':load_progress(p.parent for p in (self.root/'runs').rglob('summary.json'))}
+
+    def practice_target(self,game_id,increment):
+        entry=next((e for e in catalog(self.root) if e['id']==game_id and e['available']),None)
+        if not entry:raise ValueError('No available challenge for this game')
+        metadata=json.loads((entry['challenge']/'challenge.json').read_text())
+        progress=next((p for p in load_progress(r.parent for r in (self.root/'runs').rglob('summary.json'))
+                       if p['game']==game_id and p['challenge_id']==metadata['challenge_id']),
+                      {'game':game_id,'challenge_id':metadata['challenge_id'],'best_supported_score':None})
+        target=next_target(progress,increment)
+        directory=self.root/'runs'/'arcade-processes';directory.mkdir(parents=True,exist_ok=True)
+        with (directory/'practice-targets.jsonl').open('a') as file:
+            file.write(json.dumps({**target,'at':datetime.now(timezone.utc).isoformat()})+'\n')
+        return target
 
     async def recommend(self,intent):
         options={e['id']:e['goal'] for e in catalog(self.root) if e['available']}
@@ -159,9 +174,11 @@ def handler(app):
         def log_message(self,*args):pass
 
         def send(self,value,status=200):
-            data=json.dumps(value).encode();self.send_response(status)
-            self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store')
-            self.end_headers();self.wfile.write(data)
+            try:
+                data=json.dumps(value).encode();self.send_response(status)
+                self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store')
+                self.end_headers();self.wfile.write(data)
+            except (BrokenPipeError,ConnectionResetError):pass  # viewer closed/navigated away
 
         def safe_host(self):
             return self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
@@ -183,6 +200,7 @@ def handler(app):
                 self.send_header('Cache-Control','no-store');self.end_headers()
                 with file.open('rb') as stream:
                     while chunk:=stream.read(65536):self.wfile.write(chunk)
+            except (BrokenPipeError,ConnectionResetError):pass
             except (OSError,ValueError,KeyError) as exc:self.send({'error':str(exc)},500)
 
         def do_POST(self):
@@ -203,6 +221,7 @@ def handler(app):
                 if path=='/api/start':return self.send(app.start(body.get('game')),202)
                 if path=='/api/stop':return self.send(app.stop(),202)
                 if path=='/api/inference':return self.send(app.configure_inference(body.get('provider'),body.get('model')))
+                if path=='/api/practice-target':return self.send(app.practice_target(body.get('game'),body.get('increment')))
                 self.send({'error':'Not found'},404)
             except httpx.HTTPStatusError as exc:
                 status=exc.response.status_code

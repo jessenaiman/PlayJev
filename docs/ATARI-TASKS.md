@@ -125,18 +125,20 @@ See [TESTING-ATARI.md](TESTING-ATARI.md) for upstream/local test contracts and f
 - [ ] Alternating/provider-profile comparisons, new game adapters, then queued vision
       and free-model routing cookbook implementation; no premature playable/winner claims.
 
-## 8. Progressive practice targets
+## 8. Progressive practice targets — tracking/preview implemented
 
-- [ ] Record a last-observed endpoint ledger: run/frame/image hash, supported score,
+- [x] Record a last-observed endpoint ledger: run/frame/image hash, supported score,
       observed game progress, stop cause, player/target geometry and replay links.
       Keep last observation distinct from the exact terminal state if capture lags.
-- [ ] Configure a per-game increment X: next practice target is previous best plus X.
-      Prefer game progress (e.g. cleared aliens/waves), not elapsed wall time; unsupported
-      wave/score values stay unknown. Optional budget increments are explicit caps,
-      not game-completion evidence.
+- [x] Score-page configurable X and best-supported-score + X goal preview, scoped to
+      one challenge; tested Crackpots 690 + 100 = 790 with no inference/launch.
+- [ ] Calibrate game-progress metrics (e.g. cleared aliens/waves); unsupported
+      wave/score values stay unknown. Budget increments, if added, must be explicit
+      practice caps rather than completion/progress evidence.
 - [ ] Supply endpoint failures and progress targets as bounded context to the next
       controller attempt, preserving inference/action provenance.
 - [ ] Fresh-start evaluation stays separate from adaptive practice and any explicitly
       resumed checkpoints. Never silently resume/reset or rank evolving budgets together.
-- [ ] Test zero progress, unknown HUD, missing terminal evidence, achieved targets,
-      configurable caps and repeated failures before enabling automatic progression.
+- [x] Test unknown baseline, evidence tampering, capture/hash mismatch, repeated
+      failures and increment bounds; browser ledger/goal preview and layouts checked.
+- [ ] Test achieved-target execution and caps before enabling automatic progression.
