@@ -27,26 +27,26 @@ def build(runs, output):
             continue
         seen.add(directory)
         row = json.loads((directory/"summary.json").read_text())
-        key = (row["game"],row["challenge_id"])
+        key = (row["game"],row["challenge_id"],row.get("playback_mode","paused-inference-benchmark"))
         item = {**row,"run":str(directory),"eligible":eligible(directory,row)}
         groups.setdefault(key,[]).append(item)
     sections, data = [], []
     def link(path,label):
         href = quote(os.path.relpath(path,output.resolve()),safe="/.")
         return f'<a href="{html.escape(href,quote=True)}">{html.escape(label)}</a>'
-    for (game, challenge), rows in sorted(groups.items()):
+    for (game, challenge, mode), rows in sorted(groups.items()):
         rows.sort(key=lambda r:(not r["eligible"], -(r["score"] or 0) if r["eligible"] else 0,r["run"]))
-        data.append({"game":game,"challenge_id":challenge,"runs":rows})
-        text = f'<h2>{html.escape(game)} · challenge {html.escape(challenge[:12])}</h2>'
+        data.append({"game":game,"challenge_id":challenge,"playback_mode":mode,"runs":rows})
+        text = f'<h2>{html.escape(game)} · challenge {html.escape(challenge[:12])} · {html.escape(mode)}</h2>'
         text += '<table><tr><th>Rank</th><th>High score</th><th>Player</th><th>Game seconds</th><th>Stage 1</th><th>Evidence</th></tr>'
         rank = 0
         for r in rows:
             path = Path(r["run"])
             if r["eligible"]:
                 rank += 1
-            score = str(r["score"]) if r["eligible"] else "Pending review"
+            score = str(r["score"]) if r["eligible"] else f'{r["score"]} (unranked)' if r.get('score_verified') else "Pending review"
             stage = "Verified" if r.get("stage_clear_candidate",{}).get("verified") else "—"
-            reviewer = r.get("score_review",{}).get("reviewer","human (legacy)") if r["eligible"] else r["status"]
+            reviewer = r.get("score_review",{}).get("reviewer","human (legacy)") if r.get('score_verified') else r["status"]
             evidence = r.get("score_review",{}).get("evidence","final.png")
             text += '<tr>' + ''.join(f'<td>{html.escape(str(v))}</td>' for v in
                 (rank if r["eligible"] else "—",score,r["config"]["player"],r["game_frames"]/60,stage))

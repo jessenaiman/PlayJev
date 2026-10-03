@@ -86,6 +86,9 @@ It uses the existing TypeSafe API key and text observations—no local model. Th
 separate experimental adapter, not the trained pixel policy described below. It has
 a [verified first-wave checkpoint](docs/ATARI-CHECKPOINT.md) and evidence-linked high-score board.
 
+For continuous Start/Stop gameplay, predictive overlays, and automated Jev HUD
+reading, see the [JevPilot source review and Atari adaptation](docs/JEVPILOT-RESEARCH.md).
+
 The model plays a game, one command:
 
 ```bash

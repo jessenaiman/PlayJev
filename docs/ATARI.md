@@ -6,6 +6,41 @@ is needed. This adapts PlayJev's observe/choose/execute loop; it is not its trai
 pixel policy, and comparable game performance has not been established.
 
 Games: **Space Invaders**, **Freeway**, and **Defender** (player one). Use your own ROMs.
+
+### Important: this is currently a paused-inference benchmark
+
+The current runner is **not continuous real-time play**. It resumes and pauses the
+core in short observation intervals, then waits for model inference. Its `complete`
+status means the frame budget was consumed, **not** that the game was completed.
+First-wave evidence is a separate result; elapsed time never proves a stage clear.
+New runs stop at a suspected game-over signal rather than padding the remaining
+budget with no-input frames. That visual signal still requires review and terminated
+runs are not automatically ranked. Historical recordings and scores remain unchanged.
+
+### Continuous Space Invaders and Jev score recording
+
+The separate continuous prototype fixes that playback model:
+
+```bash
+.venv/bin/python -m playjev.live runs/first-wave-120s --out runs/live-next
+```
+
+Click **Start Jev**, watch moving sprite boxes and predicted laser trajectories,
+then **Stop & save**. There is no default test duration or automatic restart.
+**Fullscreen** changes display size only; perception reads the native framebuffer.
+Overlays track canvas bounds on resize/fullscreen and scale their backing store for
+high-DPI displays. Browser layout checks passed at 390×844, 1920×1080, 768×1024
+(2× DPR), and 3440×1440. These layout checks are not a mobile touchscreen gameplay test.
+
+After stopping, hosted Jev reads distinct HUD glyphs in one batched request and saves
+the observations, choices and usage to `hud-jev.json`. Pixel/template and temporal
+checks reject unsupported numbers. The prior **1,640** Space Invaders result was
+recovered by this pipeline; the continuous 20-second smoke test recorded **215**.
+Different playback modes remain separate on the board. See
+[the source review](JEVPILOT-RESEARCH.md) for the control-loop design and limitations.
+
+The continuous prototype is not yet integrated into the upstream browser roster;
+it currently needs the Python launcher, locally staged EmulatorJS assets and your ROM.
 The existing parent `.env` supplies `TYPESAFE_API_KEY`; the key stays in Python,
 never browser JavaScript, logs, videos or metadata.
 
@@ -87,8 +122,9 @@ It does not claim Space Invaders' ROM-specific laser detector works unchanged he
 Defender uses normal joystick mechanics for smart bombs (fire below the city) and
 hyperspace (fire above the playfield), not cheats. Pressing fire after game over can
 restart the game, so the runner observes the background-color cycle every six frames
-and releases all controls for the rest of the fixed budget. This is logged as
-`terminal_hold`, not a Jev action or hidden replacement policy. The detector is an
+and stops the run at that candidate. Older v2 recordings instead released controls
+for the rest of the fixed budget, logged as `terminal_hold`; those frames were not
+active gameplay. The detector is an
 experimental ROM-specific visual signal; the replay must confirm the terminal event.
 
 The visible 30-second run `runs/defender-jev-gates-v2` scored **1,750**, reviewed by

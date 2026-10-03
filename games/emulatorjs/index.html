@@ -1,10 +1,41 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><title>Jev Atari</title>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Jev Atari</title>
 <style>html,body{width:100%;height:100%;margin:0;background:black}
-#game{width:100%;height:92%}.ejs_menu_bar{display:none!important}
-#status{height:8%;color:white;font:14px monospace;padding:4px;box-sizing:border-box}</style>
+body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+#game{width:100%;flex:1;min-height:0}.ejs_menu_bar{display:none!important}
+#status{flex:none;min-height:48px;color:white;font:14px monospace;padding:8px;box-sizing:border-box;overflow-wrap:anywhere}
+button{min-height:36px;margin:4px}</style>
 <div id="game"></div>
 <div id="status">Loading EmulatorJS…</div>
+<canvas id="tracking" style="position:fixed;pointer-events:none;z-index:9999"></canvas>
+<script>
+window.drawTracking = observation => {
+    window.lastTracking=observation;
+    const source=document.querySelector('canvas.ejs_canvas');
+    if(!source)return;
+    const overlay=document.getElementById('tracking'),r=source.getBoundingClientRect();
+    overlay.style.left=r.left+'px';overlay.style.top=r.top+'px';
+    const dpr=window.devicePixelRatio||1;
+    overlay.style.width=r.width+'px';overlay.style.height=r.height+'px';
+    overlay.width=Math.round(r.width*dpr);overlay.height=Math.round(r.height*dpr);
+    const ctx=overlay.getContext('2d'),sx=r.width/160,sy=r.height/210;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.font='12px monospace';
+    for(const [role,items,color] of [['alien',observation.aliens||[],'#ffcc44'],['player',observation.player?[observation.player]:[],'#44ff88'],['laser',observation.projectiles||[],'#55ccff']]){
+        ctx.strokeStyle=color;ctx.fillStyle=color;
+        for(const item of items){const [x,y,x2,y2]=item.box;ctx.strokeRect(x*sx,y*sy,(x2-x+1)*sx,(y2-y+1)*sy);ctx.fillText(role,x*sx,y*sy-3);}
+    }
+    for(const laser of observation.projectile_motion||[]){
+        if(laser.vy==null)continue;
+        ctx.strokeStyle=laser.direction==='down'?'#ff6666':'#55ccff';ctx.setLineDash([4,4]);
+        ctx.beginPath();ctx.moveTo(laser.x*sx,laser.y*sy);
+        ctx.lineTo(laser.x*sx,Math.max(0,Math.min(210,laser.y+laser.vy*30))*sy);ctx.stroke();ctx.setLineDash([]);
+    }
+};
+const redraw=()=>{if(window.lastTracking)window.drawTracking(window.lastTracking);};
+window.addEventListener('resize',redraw);document.addEventListener('fullscreenchange',redraw);
+new ResizeObserver(redraw).observe(document.getElementById('game'));
+</script>
 <script>
 window.EJS_player = '#game';
 window.EJS_core = 'atari2600';

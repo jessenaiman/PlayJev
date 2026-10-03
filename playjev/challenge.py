@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+from urllib.parse import urlparse
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -254,7 +255,10 @@ class GatedJevPlayer(JevPlayer):
                     conflicts.append({"laser_x":p["x"],"impact_in_frames":round(impact,1),"tracked":p["direction"]=="down"})
             paths[direction] = {"movement":direction,"predicted_collisions":conflicts,"collision_predicted":bool(conflicts),
                                 "edge_blocked":px is None or (direction=="left" and px<=14) or (direction=="right" and px>=146)}
-        gate_state = {**state, "control": {"player_x": px, "player_age_frames": now - self.last_seen if player else None,
+        # Keep raw images/geometry in runner logs; the model needs derived motion,
+        # collision paths and firing lanes, not duplicate current/previous sprites.
+        gate_state = {"game":game.id,"game_frame":now,"action_frames":count,
+                      "control": {"player_x": px, "player_age_frames": now - self.last_seen if player else None,
                       "projectile_tracks": projectiles, "immediate_threat": any(p["threatens_staying"] for p in projectiles),
                       "escape_paths":paths,
                       "alien_velocity_x_per_frame": self.velocity, "targets": candidates,
@@ -265,7 +269,7 @@ class GatedJevPlayer(JevPlayer):
                        "criteria": {"danger": "An approaching descending projectile near the player's x threatens impact soon", "safe": "No immediate evidence of impact; continue targeting aliens"}},
             "dodge": {"type": "choice", "instructions": "If an enemy projectile threatens player one, choose an escape path without predicted collisions or blocked edges from control.escape_paths. Prefer moving away from the threatening laser. Collision timing and paths are already computed; do not redo the arithmetic. Stay only if it is safe or no moving path is safer.", "criteria": paths},
             "target": {"type": "choice", "instructions": "Which firing lane gives player one a useful chance to hit an alien? control.targets summarizes observed alien-colored pixels along each lane, with motion-adjusted aim_x. Prefer already aligned lanes that still have targets, otherwise nearby lanes. Avoid far away lanes when a nearer useful lane exists. This chooses a lane, not controller direction; code times alignment. Hold only when player or targets are unknown.",
-                       "criteria": {**{k: v for k, v in candidates.items()}, "hold": "No reliable target or player position; keep position"}},
+                       "criteria": {**{k: "Choose firing lane described in control.targets."+k for k in candidates}, "hold": "No reliable target or player position; keep position"}},
             "trigger": {"type": "choice", "instructions": "Should player one fire to clear the Space Invaders wave? Hold fire while any aliens remain, including while dodging or repositioning; release only if no useful enemies are visible.",
                         "criteria": {"fire": "Shoot remaining enemies", "release": "No useful enemies visible"}}
         }
@@ -326,6 +330,41 @@ class DefenderJevPlayer(JevPlayer):
         return {"request":body,"response":result,"components":gates,"choice":choice,
                 "confidence":min(g["confidence"] for g in gates.values()),
                 "composition":"Defender-2D-movement+independent-trigger-v1"}
+
+
+class OllayaGatedPlayer(GatedJevPlayer):
+    """Identical gates/controller; only the inference transport/model changes."""
+    def __init__(self, question=None, model="kev:0.8b", endpoint="http://127.0.0.1:11435"):
+        super().__init__(question, model)
+        url = urlparse(endpoint)
+        if url.scheme != "http" or url.hostname not in ("127.0.0.1","localhost","::1") or url.username or url.password or url.query or url.fragment or url.path not in ("","/"):
+            raise ValueError("Ollaya endpoint must be a plain loopback HTTP URL")
+        self.endpoint = endpoint.rstrip("/")
+
+    async def request(self, body):
+        def send():
+            headers = {"Content-Type":"application/json"}
+            if os.environ.get("OLLAYA_API_KEY"):
+                headers["Authorization"] = "Bearer " + os.environ["OLLAYA_API_KEY"]
+            # Explicit loopback transport: never send the TypeSafe credential
+            # locally, never use a system proxy, never silently fall back to Jev.
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            answers, responses, subrequests = {}, [], []
+            for key, question in body["questions"].items():
+                # The 6GB GPU cannot fit four long question contexts together.
+                # Questions are independent; preserve their exact state/rubrics
+                # while serializing inference. Never truncate or change controls.
+                part = {**body,"questions":{key:question}}
+                req = urllib.request.Request(self.endpoint+"/v1/systemone",json.dumps(part).encode(),headers)
+                with opener.open(req,timeout=180) as response:
+                    result = json.load(response)
+                answers.update(result["answers"])
+                responses.append(result)
+                subrequests.append(part)
+            return {"model":responses[0]["model"],"answers":answers,
+                    "usage":{k:sum(r["usage"][k] for r in responses) for k in ("input_tokens","output_tokens")},
+                    "transport":"sequential-single-question","subrequests":subrequests,"subresponses":responses}
+        return await asyncio.to_thread(send)
 
 
 class BaselinePlayer(Player):
@@ -465,12 +504,15 @@ def replay_html(directory, summary, records):
     payload = json.dumps({"summary": summary, "records": records}).replace("<", "\\u003c")
     (directory / "replay.html").write_text("""<!doctype html><meta charset='utf-8'><title>Jev replay</title>
 <style>body{background:#151515;color:#eee;font:16px monospace;max-width:1000px;margin:24px auto}video{width:640px;max-width:100%}pre{white-space:pre-wrap}button{margin:8px}</style>
-<h1>Jev challenge replay</h1><video id='video' controls src='replay.webm'></video>
+<h1>Atari benchmark replay — paused inference, not continuous live play</h1><p id='outcome'></p><video id='video' controls src='replay.webm'></video>
 <p>Playback speed <select id='speed'><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option></select>
 <button id='prev'>Previous decision</button><button id='next'>Next decision</button></p><pre id='info'></pre><details><summary>Run metadata</summary><pre id='meta'></pre></details>
 <script>const data=""" + payload + """;
 const video=document.getElementById('video'), info=document.getElementById('info');
 document.getElementById('meta').textContent=JSON.stringify(data.summary,null,2);
+if(data.summary.playback_mode==='continuous')document.querySelector('h1').textContent='Continuous Atari replay — asynchronous Jev decisions';
+document.getElementById('outcome').textContent=data.summary.game_over_candidate?'Stopped or padded after a suspected game over; visual review required.':data.summary.status==='complete'?'Test frame budget reached. This does not mean the game was completed.':'Test ended before its frame budget.';
+if(data.summary.playback_mode==='continuous')document.getElementById('outcome').textContent=data.summary.game_over_candidate?'Stopped at a suspected game over; not automatically verified.':'Stopped by user or explicit smoke-test cap. No game-completion claim.';
 document.getElementById('speed').onchange=e=>video.playbackRate=Number(e.target.value);
 function index(){let i=0;data.records.forEach((r,j)=>{if(r.video_time_s<=video.currentTime)i=j});return i}
 video.ontimeupdate=()=>{const r=data.records[index()];info.textContent=r?JSON.stringify({step:r.step,game_time_s:r.game_frame/60,action:r.decision.choice,confidence:r.decision.confidence,gates:r.decision.components,guard:r.decision.guard,terminal_hold:r.decision.terminal_hold,executed_segments:r.executed_segments,inference_s:r.latency_s,frames:r.frames},null,2):'No decisions recorded'};
@@ -491,18 +533,28 @@ async def run(args, player=None):
             raise ValueError(f"Challenge {label} bytes changed")
     load_dotenv(ROOT.parent / ".env", override=False)
     hosted = args.player in ("jev", "jev-composed", "jev-gates")
+    if args.player == "ollaya-gates" and args.model == "jev-latest":
+        args.model = "kev:0.8b"
     if player is None and hosted and not os.environ.get("TYPESAFE_API_KEY"):
         raise ValueError("TYPESAFE_API_KEY is required")
     question = args.question.read_text() if args.question else None
-    player = player or (DefenderJevPlayer(question,args.model) if args.player == "jev-gates" and game.id == "defender" else
+    player = player or (OllayaGatedPlayer(question,args.model,getattr(args,"ollaya_url","http://127.0.0.1:11435")) if args.player == "ollaya-gates" else
+                        DefenderJevPlayer(question,args.model) if args.player == "jev-gates" and game.id == "defender" else
                         GatedJevPlayer(question, args.model) if args.player == "jev-gates" else
                         ComposedJevPlayer(question, args.model) if args.player == "jev-composed" else
                         JevPlayer(question, args.model) if hosted else BaselinePlayer(args.player, args.seed))
     out = args.out or ROOT / "runs/challenges" / f"{metadata['game']}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{os.urandom(3).hex()}"
     out.mkdir(parents=True, exist_ok=False)
-    config = {"player": args.player, "player_class": type(player).__name__, "model": args.model if hosted else None, "observation": args.observation,
+    config = {"player": args.player, "player_class": type(player).__name__, "model": args.model if hosted or args.player=="ollaya-gates" else None, "observation": args.observation,
               "question": question, "action_frames": args.action_frames, "speed": args.speed, "watch_delay": args.watch_delay, "seed": args.seed}
     config["source_sha256"] = {name:digest((ROOT/"playjev"/name).read_bytes()) for name in ("challenge.py","invaders.py","defender.py")}
+    config["policy_version"] = "laser-gates-compact-v2" if args.player in ("jev-gates","ollaya-gates") and game.id=="space-invaders" else None
+    if args.player=="ollaya-gates":
+        config["ollaya_url"] = player.endpoint
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(player.endpoint+"/api/tags",timeout=10) as response:
+            tags = json.load(response)["models"]
+        config["model_manifest"] = next((r for r in tags if r["name"]==args.model), None)
     summary = {"schema": SCHEMA, "challenge_id": metadata["challenge_id"], "game": game.id,
                "budget_frames": metadata["budget_frames"], "config": config, "status": "incomplete", "score": None,
                "metric": "highest-observed-player-one-hud-score",
@@ -528,7 +580,7 @@ async def run(args, player=None):
                     if game.id == "space-invaders":
                         current["projectile_motion"] = recent_motion
                     count = min(args.action_frames, metadata["budget_frames"] - elapsed)
-                    if args.player == "jev-gates" and any(p["direction"] != "up" and p["y"] > 145 for p in recent_motion):
+                    if args.player in ("jev-gates","ollaya-gates") and any(p["direction"] != "up" and p["y"] > 145 for p in recent_motion):
                         count = min(count, 12)  # more frequent Jev decisions near low incoming lasers
                     state = {"game": game.id, "goal": game.goal, "current": current,
                              "previous": previous if args.observation != "single" else None,
@@ -557,6 +609,8 @@ async def run(args, player=None):
                         plan.append((decision["rest_choice"], count-moving))
                     record["executed_segments"] = []
                     for selected, duration in plan:
+                        if terminal:
+                            break
                         while duration:
                             chunk = min(6, duration)
                             before_image = frame
@@ -564,15 +618,22 @@ async def run(args, player=None):
                             actual += await env.frames(game.actions[executed], chunk)
                             frame = await env.capture()
                             if game.id == "space-invaders":
-                                recent_motion = motion(geometry(before_image), geometry(frame), chunk)
+                                observed = geometry(frame)
+                                recent_motion = motion(geometry(before_image), observed, chunk)
+                                if not observed["background_black"] and not terminal:
+                                    terminal = True
+                                    summary["game_over_candidate"] = {"step":len(records),"game_frame":elapsed+actual,"reason":"background-color-cycle"}
+                                    (out/"game-over.png").write_bytes(frame)
                             elif game.id == "defender" and not defender_geometry(frame)["background_black"] and not terminal:
                                 terminal = True
                                 summary["game_over_candidate"] = {"step":len(records),"game_frame":elapsed+actual,"reason":"background-color-cycle"}
                                 (out/"game-over.png").write_bytes(frame)
                             record["executed_segments"].append({"choice":executed,"frames":chunk})
                             duration -= chunk
+                            if terminal:
+                                break
                     record["actual_frames"] = actual
-                    elapsed += count
+                    elapsed += actual
                     frame = await env.capture()
                     (out / f"frame-{len(records):04}.png").write_bytes(frame)
                     record["after_frame_sha256"] = digest(frame)
@@ -584,8 +645,6 @@ async def run(args, player=None):
                         n = after["alien_count"]
                         record["alien_count"] = n
                         record["projectile_motion"] = recent_motion
-                        if not after["background_black"]:
-                            summary["game_over_candidate"] = {"step":len(records),"game_frame":elapsed,"reason":"background-color-cycle"}
                         # Candidate only: reviewer must inspect disappearance and fresh wave.
                         if min_aliens is not None and min_aliens <= 3 and n >= 30 and "stage_clear_candidate" not in summary:
                             summary["stage_clear_candidate"] = {"step": len(records), "game_frame": elapsed,
@@ -601,16 +660,19 @@ async def run(args, player=None):
                     log.flush()
                     previous = current
                     print(f"{elapsed/60:.2f}s / {metadata['budget_frames']/60:.2f}s: {decision['choice']} confidence={decision['confidence']}", flush=True)
-                    if summary.get("game_over_candidate") and game.id != "defender":
+                    if terminal:
                         break
             (out / "final.png").write_bytes(frame)
             summary["status"] = "complete" if elapsed == metadata["budget_frames"] else "terminated"
+            summary["outcome"] = "suspected-game-over-review-required" if terminal else "test-budget-reached"
+            summary["game_completed"] = False
+            summary["playback_mode"] = "paused-inference-benchmark"
     except BaseException as exc:
         summary["error"] = type(exc).__name__ + ": " + str(exc)
         raise
     finally:
         summary.update(game_frames=elapsed, decisions=len(records))
-        summary["api_requests"] = sum("request" in r["decision"] for r in records)
+        summary["api_requests"] = sum(len(r["decision"].get("response",{}).get("subrequests",[])) or int("request" in r["decision"]) for r in records)
         videos = list((out / "video").glob("*.webm"))
         if videos:
             videos[0].rename(out / "replay.webm")
@@ -679,7 +741,7 @@ async def experiment(args):
 
 
 def validate_run(a):
-    if a.player not in ("jev", "jev-composed", "jev-gates", "fixed", "random") or a.observation not in ("regions", "compact", "single"):
+    if a.player not in ("jev", "jev-composed", "jev-gates", "ollaya-gates", "fixed", "random") or a.observation not in ("regions", "compact", "single"):
         raise ValueError("Unknown player or observation mode")
     if not isinstance(a.action_frames, int) or not 1 <= a.action_frames <= 60 or not 0 < a.speed <= 1 or not 0 <= a.watch_delay <= 10:
         raise ValueError("action-frames: 1..60; speed: (0,1]; watch-delay: 0..10")
@@ -696,8 +758,9 @@ def cli():
     c.add_argument("--assets", type=Path, default=ASSETS)
     r = sub.add_parser("run", help="Play and record one challenge; default watch speed is 0.25x")
     r.add_argument("challenge", type=Path)
-    r.add_argument("--player", choices=("jev", "jev-composed", "jev-gates", "fixed", "random"), default="jev")
+    r.add_argument("--player", choices=("jev", "jev-composed", "jev-gates", "ollaya-gates", "fixed", "random"), default="jev")
     r.add_argument("--model", default="jev-latest")
+    r.add_argument("--ollaya-url", default="http://127.0.0.1:11435", help="Loopback Ollaya server; never receives the TypeSafe key")
     r.add_argument("--observation", choices=("regions", "compact", "single"), default="regions")
     r.add_argument("--question", type=Path)
     r.add_argument("--action-frames", type=int, default=6)
