@@ -74,11 +74,12 @@ class Metrics:
                '+'+'-'*width+'+']+['|'+''.join(row)+'|' for row in grid]+['+'+'-'*width+'+','P player estimate / E target']
         if 'pots' in current:lines.append('v available pot estimate')
         if 'projectiles' in current:lines.append('| projectile estimate')
+        if decision.get('selected_target') is not None:
+            lines.append(f'Target: {decision["selected_target"]} ({decision["selection_source"]})')
         lines.append('Model judgments, not proof:')
+        from .judgment_display import answer_lines
         for name,answer in decision.get('components',{}).items():
-            lines.append(f'{name:8} {answer["choice"]:12} c={answer["confidence"]:.2f}')
-            top=sorted(answer.get('probabilities',{}).items(),key=lambda item:-item[1])[:2]
-            lines.append('  '+' '.join(f'{key}:{value:.2f}' for key,value in top))
+            lines.extend(answer_lines(name,answer))
         for name,answer in latest.get('accuracy_checks',{}).items():
             value=answer.get('noul')
             lines.append(f'{name} p(yes): {value:.2f}' if isinstance(value,(int,float)) else f'{name}: unknown')

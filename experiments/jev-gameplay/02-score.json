@@ -1,0 +1,12 @@
+{
+  "player_x": 55,
+  "bugs": [
+    {"id": "bug_0", "x": 71, "y": 138, "vx": 0, "vy": -0.3},
+    {"id": "bug_1", "x": 103, "y": 132, "vx": null, "vy": null}
+  ],
+  "candidates": {
+    "primary": {"pot": "pot_2", "x": 71, "catchable_bugs": 1, "arrival_frames": 22.9, "ready_to_drop": false, "needed_direction": "right", "intercepts": [{"bug": "bug_0", "horizontal_miss": 0, "before_window": true, "motion_measured": true}]},
+    "secondary": {"pot": "pot_4", "x": 103, "catchable_bugs": 1, "arrival_frames": 68.6, "ready_to_drop": false, "needed_direction": "right", "intercepts": [{"bug": "bug_1", "horizontal_miss": 0, "before_window": true, "motion_measured": false}]}
+  },
+  "scope": "Illustrative pursuit-evidence comparison, not native gameplay or a guaranteed catch. First bug has measured upward motion; second has unknown motion. Geometry and fresh control remain code-owned."
+}

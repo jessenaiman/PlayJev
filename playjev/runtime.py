@@ -41,6 +41,7 @@ class LiveGame:
     terminal_note: str
     terminal_reason: str = 'three-background-color-observations'
     inference_ready: Callable = lambda current:True
+    question_execution: str = 'serial'
 
 
 def crackpots_track(previous,current,frames):
@@ -57,11 +58,11 @@ def registry():
         'space-invaders':LiveGame('space-invaders','continuous-compact-v1',geometry,invaders_track,
             lambda current:current,invaders_prepare,lambda current:not current['background_black'],
             GatedJevPlayer,collect,'invaders.py','background-color candidate; not verified game over'),
-        'crackpots':LiveGame('crackpots','crackpots-state-lane-code-trigger-v5',crackpots_geometry,crackpots_track,
+        'crackpots':LiveGame('crackpots','crackpots-modular-score-ranking-v6',crackpots_geometry,crackpots_track,
             overlay,crackpots_prepare,lambda current:current.get('final_building_loss_candidate',False),CrackpotsPlayer,crackpots_collect,
             'crackpots.py','six-layer native roof-loss candidate; not verified game over',
             'three-native-captures-at-final-building-loss',
-            inference_ready=lambda current:current.get('active_play_evidence',False)),
+            inference_ready=lambda current:current.get('active_play_evidence',False),question_execution='batch'),
         'dig-dug':LiveGame('dig-dug','digdug-single-action-v2',digdug.geometry,digdug.track,
             digdug.overlay,digdug.prepare,lambda current:not current.get('playfield_visible',False),digdug.DigDugPlayer,digdug.collect,
             'digdug.py','partial HUD font; missing playfield stops without restart; stage/game-over proof pending',

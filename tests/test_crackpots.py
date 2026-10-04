@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from PIL import Image
 from playjev.crackpots import geometry, tracks, interception, guard
 from playjev.crackpots_player import CrackpotsPlayer
+from playjev.crackpots_lane import LaneTactics
 from playjev.challenge import GAMES
 from playjev.crackpots_score import FONT, digit_grids
 from playjev.hud import assemble, request_for
@@ -44,7 +45,7 @@ class CrackpotsTests(unittest.TestCase):
     def test_gate_composition(self):
         current={'player':{'box':[30,24,36,40]},'pots':[{'box':[36,46,42,47]}],
                  'bugs':[],'bug_tracks':[],'pot_row':46,'window_y':76}
-        p=CrackpotsPlayer()
+        p=CrackpotsPlayer(tactics=LaneTactics())
         def answer(choice,options):return {'choice':choice,'confidence':1,'probabilities':{k:float(k==choice) for k in options}}
         p.request=AsyncMock(return_value={'answers':{'lane':answer('pot_0',['pot_0','hold','scan'])}})
         d=asyncio.run(p.decide({'current':current},GAMES['crackpots']))
@@ -57,7 +58,7 @@ class CrackpotsTests(unittest.TestCase):
     def test_file_scoped_pursuit_values_expose_relative_directions_without_extra_questions(self):
         current={'player':{'box':[39,24,45,40]},'pots':[{'box':[36,46,42,47]},{'box':[68,46,74,47]}],
                  'bugs':[],'bug_tracks':[],'pot_row':46,'window_y':76}
-        p=CrackpotsPlayer();p.policy['include_pursuit_evidence']=True
+        p=CrackpotsPlayer(tactics=LaneTactics());p.policy['include_pursuit_evidence']=True
         def answer(value):return {'choice':value,'confidence':1,'probabilities':{k:float(k==value) for k in ('pot_0','pot_1','hold','scan')}}
         p.request=AsyncMock(return_value={'answers':{'lane':answer('pot_1')}})
         result=asyncio.run(p.decide({'current':current},GAMES['crackpots']))

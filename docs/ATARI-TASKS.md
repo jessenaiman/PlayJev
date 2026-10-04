@@ -32,8 +32,8 @@ tests to classify moves or iterate policies; use them only to diagnose an actual
 - [ ] `playjev/transports.py`: resolve unnecessary one-question CLI calls within a
       workflow against the parallel-questions cookbook using recorded local memory,
       latency and token evidence. Keep startup/gameplay/completion/review separate.
-- [ ] Review useful Noul/Score judgments against the function-calling/confidence
-      cookbooks before adding them; compact gameplay currently uses Choice only.
+- [ ] Review useful Noul judgments against the function-calling/confidence
+      cookbooks before adding them; assess the active Score ranking in visible play.
       Code-known counts and native proof do not need extra model questions. Account
       for provider-specific Score confidence rather than assuming identical semantics.
 
@@ -58,8 +58,13 @@ the runnable example's diagram in `experiments/jev-gameplay/README.md`.
       `playjev/recipes/crackpots-lane.json`. Demonstrate pursuit of a supplied
       catchable pot in native gameplay; example: `experiments/jev-gameplay/01-state.json`.
 - [ ] 2. [Score](https://docs.typesafe.ai/primitives/score): rate intercept quality
-      with concrete ordered levels in a gameplay recipe; preserve distributions,
-      fractional scores and legends rather than treating a rating as HUD points.
+      using `crackpots_quality.py` and `recipes/crackpots-quality.json`; validate the
+      usefulness and latency of grading a two-candidate geometry shortlist. Preserve
+      distributions, fractional scores and legends, never confuse ratings with HUD
+      points. CLI example: `experiments/jev-gameplay/02-score.json`.
+      Compare local and explicitly selected hosted latency under the same bounded
+      contract; input compaction/batching/provider changes cannot be credited solely
+      to Score. Retain rounding-compatible validation of original returned values.
 - [ ] 3. [Noul](https://docs.typesafe.ai/primitives/noul): independently judge tactical
       pursuit and firing opportunities; compose them outside perception while
       retaining the code-owned fresh-frame drop guard. No duplicate model arithmetic.

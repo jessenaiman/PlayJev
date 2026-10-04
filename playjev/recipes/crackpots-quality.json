@@ -1,0 +1,22 @@
+{
+  "primary_quality": {
+    "type": "score",
+    "instructions": "How strongly do `bugs` and the predicted encounters in `candidates.primary.intercepts` support pursuing this pot? Rate pursuit evidence, not HUD points or guaranteed catch success. Code checks geometry and fresh execution.",
+    "criteria": [
+      "Observed bug motion contradicts the predicted encounter at this pot.",
+      "Bug motion is unmeasured; the predicted encounter relies on fallback motion.",
+      "Measured upward bug motion supports approaching this pot; gardener positioning is still needed.",
+      "Gardener alignment and measured upward bug motion support an imminent drop at this pot."
+    ]
+  },
+  "secondary_quality": {
+    "type": "score",
+    "instructions": "How strongly do `bugs` and the predicted encounters in `candidates.secondary.intercepts` support pursuing this pot? Rate pursuit evidence, not HUD points or guaranteed catch success. Code checks geometry and fresh execution.",
+    "criteria": [
+      "Observed bug motion contradicts the predicted encounter at this pot.",
+      "Bug motion is unmeasured; the predicted encounter relies on fallback motion.",
+      "Measured upward bug motion supports approaching this pot; gardener positioning is still needed.",
+      "Gardener alignment and measured upward bug motion support an imminent drop at this pot."
+    ]
+  }
+}

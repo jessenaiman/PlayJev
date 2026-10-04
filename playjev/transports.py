@@ -89,8 +89,9 @@ class RecordedTransport:
 
 class OllayaTransport:
     """Use the supported CLI, never a second local HTTP client or shell command."""
-    def __init__(self,timeout=180):
-        self.timeout=timeout
+    def __init__(self,timeout=180,question_execution='serial'):
+        if question_execution not in ('serial','batch'):raise ValueError('Unknown question execution mode')
+        self.timeout=timeout;self.question_execution=question_execution
 
     async def run(self,model,state,questions):
         if not isinstance(model,str) or not model or model.startswith('-'):
@@ -122,9 +123,13 @@ class OllayaTransport:
         # Serial contexts retain exact state/rubrics for limited local GPU memory.
         try:
             if not body.get('questions'):raise ValueError('No typed questions supplied')
-            for key,question in body['questions'].items():
+            for question in body['questions'].values():
                 if question.get('type') not in ('choice','noul','score'):
                     raise ValueError('Unsupported question type: '+str(question.get('type')))
+            if self.question_execution=='batch':
+                result=await self.run(body['model'],body['state'],body['questions'])
+                return {**result,'transport':'ollaya-cli-batched','subrequests':[body],'subresponses':[result]}
+            for key,question in body['questions'].items():
                 part={**body,'questions':{key:question}}
                 result=await self.run(body['model'],body['state'],part['questions'])
                 answers.update(result['answers']);responses.append(result);subrequests.append(part)
@@ -135,8 +140,8 @@ class OllayaTransport:
         except Exception as exc:raise SafetyHold(exc) from exc
 
 
-def inference(provider='ollaya',model=None):
+def inference(provider='ollaya',model=None,*,question_execution='serial'):
     """Explicit selection; never substitute the hosted provider on local failure."""
-    if provider=='ollaya':return model or 'kev:0.8b',OllayaTransport()
+    if provider=='ollaya':return model or 'kev:0.8b',OllayaTransport(question_execution=question_execution)
     if provider=='jev':return model or 'jev-latest',HostedJevTransport()
     raise ValueError('Provider must be ollaya or jev')

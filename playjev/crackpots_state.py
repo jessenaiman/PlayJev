@@ -2,7 +2,7 @@
 from .crackpots import interception
 
 
-def tactical_state(current,previous_target_x,*,include_pursuit_evidence=True):
+def tactical_state(current,previous_target_x,*,include_pursuit_evidence=True,include_interception_evidence=False):
     px,lanes=interception(current)
     evidence={
         'player_x':px,
@@ -18,4 +18,11 @@ def tactical_state(current,previous_target_x,*,include_pursuit_evidence=True):
         for pot in evidence['pots'].values():
             pot['needed_direction']=('unknown' if px is None else
                 'left' if pot['x']<px-3 else 'right' if pot['x']>px+3 else 'aligned')
+    if include_interception_evidence:
+        evidence['bugs']=[{key:bug[key] for key in ('id','x','y','vx','vy')}
+                          for bug in current.get('bug_tracks',[])[:6]]
+        for lane in lanes:
+            matching=[hit for hit in lane['intercepts'] if hit['horizontal_miss']<=8 and hit['before_window']]
+            evidence['pots'][lane['id']]['intercepts']=matching[:2]
+        evidence['interception_scope']='Up to two predicted encounters per pot; motion_measured=false means fallback motion, not an observed trajectory.'
     return evidence

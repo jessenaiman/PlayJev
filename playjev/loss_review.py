@@ -10,7 +10,7 @@ from .participation import score_attributable
 from .transports import inference, RecordedTransport, safety_report
 
 
-def fixes(game,root=ROOT):
+def fixes(game,root=ROOT,tactical_recipe='recipes/crackpots-lane.json'):
     """Closed, parent-owned edit sites; the model cannot invent paths or commands."""
     source={'crackpots':'crackpots.py','dig-dug':'digdug.py','space-invaders':'invaders.py'}[game]
     result={
@@ -26,9 +26,11 @@ def fixes(game,root=ROOT):
                      'test':'.venv/bin/python -m unittest discover -s tests -p test_execution.py'},
     }
     if game=='crackpots':
-        recipe=Path(root)/'playjev/recipes/crackpots-lane.json'
-        result['pursuit_values']={'kind':'classification-values','file':'playjev/recipes/crackpots-lane.json',
-            'change':'Revise lane.instructions or lane.criteria at this exact question file using the supplied missed-intercept evidence; do not replay a failed rubric.',
+        if tactical_recipe not in ('recipes/crackpots-lane.json','recipes/crackpots-quality.json'):
+            raise ValueError('Unknown tactical recipe edit site')
+        recipe=Path(root)/'playjev'/tactical_recipe
+        result['pursuit_values']={'kind':'classification-values','file':'playjev/'+tactical_recipe,
+            'change':'Revise instructions or criteria at this exact active question file using the supplied pursuit evidence; do not replay a failed rubric.',
             'source_sha256':digest(recipe.read_bytes()),
             'test':'.venv/bin/python -m unittest discover -s tests -p test_crackpots.py'}
     result['unknown']={'kind':'evidence-needed','file':None,'change':'Label the supplied uncertain frames before proposing code edits.','test':None}
@@ -48,7 +50,7 @@ def compact_observation(game,current):
 
 def packet(directory,summary):
     """Counts are facts about logged commands, not proof of actual motion or loss."""
-    game=summary['game'];all_controls=Counter();all_labels=Counter();actions=Counter();last=deque(maxlen=8);applied=0;rejected=0;opportunity=None
+    game=summary['game'];all_controls=Counter();all_labels=Counter();selection_sources=Counter();actions=Counter();last=deque(maxlen=8);applied=0;rejected=0;opportunity=None
     log=directory/'decisions.jsonl'
     if log.is_file():
         with log.open() as file:
@@ -59,12 +61,17 @@ def packet(directory,summary):
                     actions[choice]+=1
                     for control in choice.split('+'):all_controls[control]+=1
                 else:rejected+=1
-                for key,value in decision.get('components',{}).items():
-                    if key in ('lane','action','movement','target'):all_labels[str(value.get('choice'))]+=1
+                if 'selected_target' in decision:
+                    all_labels[str(decision['selected_target'])]+=1
+                    selection_sources[decision['selection_source']]+=1
+                else:
+                    for key,value in decision.get('components',{}).items():
+                        if key in ('lane','action','movement','target'):all_labels[str(value.get('choice'))]+=1
                 if game=='crackpots' and choice=='noop' and opportunity is None:
-                    request=decision.get('request',{});criteria=request.get('state',{}).get('pots')
+                    request=decision.get('request',{});observations=decision.get('observations',request.get('state',{}))
+                    criteria=observations.get('pots')
                     if criteria is None:criteria=request.get('questions',{}).get('lane',{}).get('criteria',{})
-                    px=request.get('state',{}).get('player_x');label=decision.get('components',{}).get('lane',{}).get('choice')
+                    px=observations.get('player_x');label=decision.get('selected_target',decision.get('components',{}).get('lane',{}).get('choice'))
                     selected=criteria.get(label);catchable=[(key,value) for key,value in criteria.items() if isinstance(value,dict) and value.get('catchable_bugs',0)>0]
                     ignored=(isinstance(selected,dict) and selected.get('catchable_bugs')==0) or label in ('hold','scan')
                     if ignored and px is not None and catchable:
@@ -131,11 +138,12 @@ def packet(directory,summary):
     if ratio is not None and ratio>=0.75:findings.append(f'Most applied decisions were noop: {noops}/{applied} ({ratio:.1%}).')
     if all_labels:
         label,count=all_labels.most_common(1)[0]
-        findings.append(f'Most selected target/action label: {label}, {count} replies. Labels are not fixed sprite identities.')
+        findings.append(f'Most selected target/action label: {label}, {count} selections. Labels are not fixed sprite identities.')
     return {'game':game,'ending':summary.get('stop_reason','unknown'),'loss_verified':summary.get('game_over_candidate',{}).get('verified',False),
             'checks':{'started':started,'baseline_score':baseline,'best_attributed_score':score,'score_increased':increased,'outcome':outcome},
             'control_counts':{k:all_controls[k] for k in controls},'unused_controls':[k for k in controls if not all_controls[k]],
-            'selected_labels':dict(all_labels.most_common(6)),'applied_commands':applied,'rejected_commands':rejected,
+            'selected_labels':dict(all_labels.most_common(6)),'selection_sources':dict(selection_sources),
+            'applied_commands':applied,'rejected_commands':rejected,
             'action_counts':{k:actions[k] for k in legal},'missed_opportunity':opportunity,
             'movement':{'stationary_interval_frames':stationary,'moving_interval_frames':moving,'unknown_interval_frames':unknown,
                         'stationary_fraction':stationary_fraction,'noop_fraction':ratio,
@@ -164,7 +172,7 @@ def handoff(state,answers,catalog,summary):
     chosen=answers['fix']['choice'];item=catalog[chosen];route='parent';reasons=[]
     if not state['checks']['started']:chosen='lifecycle';item=catalog[chosen];reasons.append('Player-control/start attribution failed; do not patch a direction rubric from demo movement')
     if chosen=='pursuit_values':
-        recorded=summary.get('config',{}).get('source_sha256',{}).get('recipes/crackpots-lane.json')
+        recorded=summary.get('config',{}).get('source_sha256',{}).get(item['file'].removeprefix('playjev/'))
         ready=(state['checks']['started'] and state.get('missed_opportunity') is not None and recorded==item['source_sha256'] and
                answers['behavior']['choice'] in ('stationary','not_following','repetition') and
                answers['fix']['confidence']>=0.5 and answers['behavior']['confidence']>=0.5)
@@ -191,7 +199,8 @@ def markdown(report):
            f"Ending: {state['ending']} · verified loss: {state['loss_verified']}",
            f"Check: **{checks['outcome']}** · started: {checks['started']} · score {checks['baseline_score']} → {checks['best_attributed_score']}",
            '', '## Recorded facts',f"Applied commands: {state['applied_commands']}; rejected: {state['rejected_commands']}.",
-           *state.get('findings',[]),
+            *state.get('findings',[]),
+            'Selection sources: `'+json.dumps(state.get('selection_sources',{}))+'`. Code-selected branches are not model replies.',
            'Control use: `'+json.dumps(state['control_counts'])+'`.', 'Unused: `'+json.dumps(state['unused_controls'])+'`.',
            'Last moves: `'+json.dumps(state['last_moves'])+'`.',
            'Native evidence: '+', '.join('`'+r['evidence']+'`' for r in state['native_observations'])+'.',
@@ -221,7 +230,8 @@ async def review(directory,*,events=None,note=None,root=ROOT,rereview=False):
         while (directory/f'loss-review-{revision}.json').exists():revision+=1
         path=directory/f'loss-review-{revision}.json';document=f'improvement-{revision}.md'
     summary=json.loads((directory/'summary.json').read_text());state=packet(directory,summary)
-    catalog=fixes(summary['game'],root);provider=summary['config'].get('provider','ollaya')
+    catalog=fixes(summary['game'],root,summary['config'].get('tactical_recipe','recipes/crackpots-lane.json'))
+    provider=summary['config'].get('provider','ollaya')
     model,transport=inference(provider,summary['config'].get('model'))
     events=events or EventLog(directory/'events.jsonl',{'kind':'llm','provider':provider,'model':model})
     from .completion import check as completion_check

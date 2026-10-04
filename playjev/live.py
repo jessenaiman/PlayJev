@@ -48,7 +48,7 @@ async def play(args):
     args.out.mkdir(parents=True,exist_ok=False)
     write_phase(args.out,'starting')
     provider=getattr(args,'provider','ollaya')
-    model,transport=inference(provider,getattr(args,'model',None))
+    model,transport=inference(provider,getattr(args,'model',None),question_execution=profile.question_execution)
     events=EventLog(args.out/'events.jsonl',{'kind':'llm','provider':provider,'model':model})
     transport=RecordedTransport(transport,args.out/'inference.jsonl',events)
     (args.out/'inference.jsonl').touch()
@@ -68,6 +68,7 @@ async def play(args):
               'playback_mode':'continuous','game_completed':False}
     summary['terminal_detection']=profile.terminal_note
     summary['config']['auxiliary_model_questions']=auxiliary
+    summary['config']['question_execution']=profile.question_execution
     summary['config']['decision_cycle']='model-choice' if auxiliary else 'code-fixed-normal-18-frames'
     summary['participant']=player_identity(summary['config'])
     summary['event_stream']='events.jsonl'
@@ -79,10 +80,13 @@ async def play(args):
     if provider=='ollaya':
         summary['config']['model_manifest']=await ollaya_manifest(model)
     summary['config']['source_sha256']={name:digest((ROOT/'playjev'/name).read_bytes())
-        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py','progress.py','practice.py','checkpoints.py','native.py','events.py','usage.py','digdug_score.py','participation.py','loss_review.py','startup.py','completion.py','recipes/startup.json','recipes/completion.json',profile.source)}
+        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py','progress.py','practice.py','checkpoints.py','native.py','events.py','usage.py','metrics.py','judgment_display.py','digdug_score.py','participation.py','loss_review.py','startup.py','completion.py','recipes/startup.json','recipes/completion.json',profile.source)}
     if game.id=='crackpots':
+        summary['config']['tactical_recipe']=player.tactics.recipe
+        summary['config']['tactical_composition']=player.tactics.composition
         for name in ('crackpots_state.py','crackpots_player.py','crackpots_control.py',
-                     'policies/crackpots.json','recipes/crackpots-lane.json'):
+                     'crackpots_lane.py','crackpots_quality.py','judgments.py',
+                     'policies/crackpots.json','recipes/crackpots-lane.json','recipes/crackpots-quality.json'):
             summary['config']['source_sha256'][name]=digest((ROOT/'playjev'/name).read_bytes())
     summary['config']['display_sha256']={name:digest((ROOT/'games/emulatorjs'/name).read_bytes())
         for name in ('index.html','live-controls.js')}
