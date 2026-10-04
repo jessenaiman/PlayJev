@@ -80,6 +80,8 @@ cost, and this release leaves that off. The prompt is built in
 
 ### Atari through EmulatorJS · Ollaya CLI / hosted TypeSafe Jev
 
+**[Active iteration checklist and unresolved fixes](docs/ATARI-TASKS.md).** Success means a verified stage clear—not passing tests.
+
 Start with the [Jev Arcade front page](docs/ARCADE.md):
 
 ```bash

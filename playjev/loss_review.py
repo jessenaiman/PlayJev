@@ -73,10 +73,11 @@ def packet(directory,summary):
                     request=decision.get('request',{});criteria=request.get('questions',{}).get('lane',{}).get('criteria',{})
                     px=request.get('state',{}).get('player_x');label=decision.get('components',{}).get('lane',{}).get('choice')
                     selected=criteria.get(label);catchable=[(key,value) for key,value in criteria.items() if isinstance(value,dict) and value.get('catchable_bugs',0)>0]
-                    if isinstance(selected,dict) and selected.get('catchable_bugs')==0 and px is not None and catchable:
+                    ignored=(isinstance(selected,dict) and selected.get('catchable_bugs')==0) or label in ('hold','scan')
+                    if ignored and px is not None and catchable:
                         candidate,value=max(catchable,key=lambda pair:pair[1]['catchable_bugs'])
                         opportunity={'step':row.get('step'),'request_frame':row.get('game_frame'),'player_x':px,
-                            'selected':label,'selected_catchable_bugs':0,'other_candidate':candidate,'other_x':value['x'],
+                            'selected':label,'selected_catchable_bugs':selected.get('catchable_bugs') if isinstance(selected,dict) else None,'other_candidate':candidate,'other_x':value['x'],
                             'other_catchable_bugs':value['catchable_bugs'],'needed_direction':'right' if value['x']>px+3 else 'left' if value['x']<px-3 else 'aligned',
                             'scope':'Recorded code interception estimate, not proof that a catch would succeed.'}
                 last.append({'step':row.get('step'),'frame':row.get('applied_at_frame',row.get('game_frame')),
@@ -181,14 +182,13 @@ def handoff(state,answers,catalog,summary):
         route='parent';reasons.append('Independent completion audit unresolved or disagrees with native/code facts')
     if answers['fix']['confidence']<0.5:
         route='parent';reasons.append('Low-confidence fix is an unaccepted hypothesis, not an instruction to change code')
-        if state['checks']['started'] and state.get('missed_opportunity') and (state.get('movement',{}).get('stationary_fraction') or 0)>=0.75 and 'pursuit_values' in catalog:
-            changes=[{**catalog['pursuit_values'],'proposal_source':'code-owned candidate from stationary/missed-intercept evidence; parent must validate, not the raw fix judgment'}]
-            reasons.append('Reject the unsupported broad refactor; inspect this exact two-value classification candidate instead')
+        changes=[]
+        reasons.append('No best edit is established. Parent must compare the actual failed JSON revision and gameplay outcome before proposing a different revision; do not recycle the initial rubric.')
     return {'route':route,'changes':changes[:2],'reasons':reasons,
             'allowed_edit':[v['file'] for v in changes] if route=='classification-worker' else [],
             'forbidden':'No directory scan, unrelated edits, safety/timing changes, inference fallback, reset, commit or push.',
             'worker_status':'not-dispatched; parent must grade three-question TypeSafe quiz and verify eligible model/cost before OpenCode CLI delegation',
-            'acceptance':'Focused offline test plus comparable native gameplay evidence; expected improvement is not guaranteed.',
+            'acceptance':'Replay the changed JSON in visible gameplay. Only a verified stage clear establishes success; score and native movement explain failures.',
             'automatic_apply':False}
 
 
@@ -212,7 +212,7 @@ def markdown(report):
         if change.get('proposal_source'):lines.append('   Proposal provenance: '+change['proposal_source']+'.')
         if change.get('operations'):lines.extend(['```json',json.dumps(change['operations'],indent=2),'```'])
         if change.get('symbol'):lines.append('   Edit site: `'+change['symbol']+'`.')
-        lines.append('   Focused check: `'+change['test']+'`.')
+        lines.append('   Gameplay check: replay from the same challenge and compare the supported score, observed movement and verified stage progression.')
     lines.extend(['',job['forbidden'],job['worker_status'],job['acceptance'],
                   '', 'No automatic patch, model retraining, longer-survival claim or game-completion claim.',
                   'This document is assembled from typed selections and code-owned templates, not unconstrained Jev-generated prose.'])

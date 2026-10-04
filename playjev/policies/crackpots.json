@@ -1,4 +1,7 @@
 {
   "include_pursuit_evidence": true,
-  "lane_instructions": "Choose a catchable pot by the bug positions and needed_direction, not its pot_N label. Move left or right to follow the intercept as bugs shift. Prefer ready_to_drop, then short arrival_frames. Do not keep the previous target when it has zero catchable_bugs. If none are catchable, scan centrally or hold. Code handles bounded movement and fresh aligned drops; never restart."
+  "lane_instructions": "Which pot has the most catchable_bugs? Choose that pot; break ties by shortest arrival_frames. Choose scan if visible bugs have no catchable pot. Choose hold if there are no visible bugs.",
+  "lane_action": "Use this pot at x={x} for {catchable_bugs} predicted catches.",
+  "hold_criterion": "No visible bugs.",
+  "scan_criterion": "Visible bugs, but no predicted catch at any pot."
 }

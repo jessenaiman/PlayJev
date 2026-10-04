@@ -62,3 +62,29 @@ No timeout, memory failure or weak answer permits automatic hosted fallback.
 Keep regression tests mocked/inference-free and all model probes explicitly bounded.
 See [open tasks](ATARI-TASKS.md), [routing](VISION-ROUTING.md) and
 [Ollaya's CLI reference](https://ollaya.dev/docs/cli).
+
+## Question format versus model behavior
+
+The installed CLI reports version **0.9.0**. It accepts the same question objects
+as Jev: `type`, `instructions`, `criteria`. Choice criteria are a label/description
+object, Score criteria are ordered levels, and Noul criteria use `true`/`false`.
+Structured descriptions are valid; they are not evidence of equivalent accuracy.
+
+Jev receives `{model, state, questions}` as one request. The CLI receives the model
+as an argument, the question map via `--questions`, and state via stdin or an
+argument (`--state-json` for a JSON object/array). `--questions` does not take the
+whole Jev request envelope. The current Crackpots policy file contains template
+values, not a directly runnable question map; that limitation is on the open checklist.
+
+CLI JSON includes native timings/routing/truncation fields beyond the common
+`model`, `answers`, `usage`. Local model names/limits/calibration differ; no implicit
+hosted fallback is allowed. Ollaya documentation describes normalized-top confidence
+for Score, while current Jev docs describe distance-aware Score confidence; do not
+share Score thresholds blindly. Choice confidence uses the same documented formula.
+
+The local adapter's serial splitting of questions is an application choice, not a
+format requirement. Neither matching JSON nor the cookbook's hosted performance
+numbers prove that `kev:0.8b` can select Atari intercepts. See
+[compatibility](https://ollaya.dev/docs/typesafe-compatibility),
+[question shapes](https://docs.typesafe.ai/sdk/python/api/types/questions.md) and
+[confidence](https://docs.typesafe.ai/confidence.md).

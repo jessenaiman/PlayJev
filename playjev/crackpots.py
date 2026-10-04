@@ -108,10 +108,11 @@ class CrackpotsPlayer(JevPlayer):
         evidence={'player_x':px,'previous_target_x':self.last_target,
                   'drop_ready':any(l['ready_to_drop'] for l in lanes),
                   'estimates':'Code supplies bounded, estimated interception candidates; not guaranteed catches.'}
-        criteria={lane['id']:{'action':'Align with this observed available pot','x':lane['x'],
+        criteria={lane['id']:{'action':self.policy.get('lane_action','Align with this observed available pot').format(**lane),'x':lane['x'],
                              'catchable_bugs':lane['catchable_bugs'],'arrival_frames':lane['arrival_frames'],
                              'ready_to_drop':lane['ready_to_drop']} for lane in lanes}
-        criteria.update(hold='Wait for reliable gardener/bug observations',scan='Move toward the central pots to prepare for a new bug')
+        criteria.update(hold=self.policy.get('hold_criterion','Wait for reliable gardener/bug observations'),
+                        scan=self.policy.get('scan_criterion','Move toward the central pots to prepare for a new bug'))
         if self.policy['include_pursuit_evidence']:
             evidence['bugs']=[{'x':b['x'],'y':b['y'],'vx':b['vx'],'vy':b['vy']} for b in current.get('bug_tracks',[])[:6]]
             for lane in lanes:

@@ -1,4 +1,5 @@
 # Atari 2600 arcade runbook
+**Active checklist: [docs/ATARI-TASKS.md](docs/ATARI-TASKS.md).** Gameplay → end report → JSON edit → replay; only a verified stage clear is success. System tests diagnose crashes, not policy improvement.
 Run commands from `PlayJev/`; use new output names, never overwrite evidence.
 ## Status and rules
 - EmulatorJS + local ROMs; continuous gameplay is separate from paused benchmarks.

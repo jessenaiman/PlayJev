@@ -108,7 +108,8 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
             answers={k:answer(v,criteria[k]['criteria']) for k,v in {'behavior':'stationary','alternative':'right','expected':'pursuit','fix':'perception'}.items()}
             answers['fix']['confidence']=0.2
             job=handoff(state,answers,fixes('crackpots'),s)
-            self.assertEqual(job['route'],'parent');self.assertEqual(job['changes'][0]['file'],'playjev/policies/crackpots.json')
+            self.assertEqual(job['route'],'parent');self.assertEqual(job['changes'],[])
+            self.assertTrue(any('No best edit' in reason for reason in job['reasons']))
             self.assertFalse(job['automatic_apply'])
 
     async def test_unverified_stationary_sprites_do_not_become_a_gameplay_finding(self):
