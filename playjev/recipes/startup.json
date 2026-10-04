@@ -1,0 +1,11 @@
+{
+  "session": {
+    "type": "choice",
+    "instructions": "Is the player responding to joystick input on a playable game screen? Read measured_control_response: a positive displacement of at least 5 pixels in either direction, with input_effect_verified and native_playable_screen_verified true, supports active control. A blocked edge in the other direction is not a failed start. No input-dependent motion or an unplayable screen means not_started. Missing facts means unknown. Judge startup only.",
+    "criteria": {
+      "active": "Verified input-dependent movement with a playable native screen",
+      "not_started": "Attract/demo, terminal or no player-control evidence",
+      "unknown": "Insufficient evidence to decide"
+    }
+  }
+}

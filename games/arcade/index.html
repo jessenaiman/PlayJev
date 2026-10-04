@@ -6,6 +6,7 @@
 .layout>*{min-width:0}.scores{max-width:100%}*{box-sizing:border-box}
 .intent label{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}select{max-width:100%}
 #metrics-details{white-space:pre;overflow-wrap:normal;overflow:auto;max-height:50vh}summary{cursor:pointer}#feed-status{margin:8px 0}
+.score-card{font-family:monospace;border:2px solid #64876f}.score-card strong{display:block;font-size:32px;color:#a9edb6}.score-card h3{letter-spacing:2px;text-transform:uppercase}#token-metrics{font-size:12px}
 </style>
  <main><header><div><h1>Jev Arcade</h1><p>Watch one real attempt. Keep the score evidence.</p></div><span class="badge" id="provider">LOCAL ROMS · NO HIDDEN RESETS</span></header>
 <div class="intent"><input id="intent" aria-label="What to play" value="Continue Crackpots and try to improve the high score"><button id="recommend">Let Jev locate a game</button></div>
@@ -13,8 +14,11 @@
 <p class="small" id="inference-note">Ollaya is the development default. Hosted Jev uses API quota only when you request a recommendation or start an attempt. Changes apply to the next attempt.</p>
 <p class="notice" id="navigation" role="status">Loading available games and score evidence…</p>
 <div class="layout"><section><h2>Choose a game</h2><div class="cards" id="games"></div>
-<h2>High scores & reviewed attempts</h2><p class="small">Ranked benchmarks and unranked live attempts are separate. Confidence is not a score. Game-over detection is still being calibrated.</p>
-<div class="scores"><table><thead><tr><th>Game</th><th>Score</th><th>Result</th><th>Mode / challenge</th><th>Player</th><th>Evidence</th></tr></thead><tbody id="scores"></tbody></table></div>
+<h2>Best supported scores</h2><div class="cards" id="best-scores"></div>
+<p class="small">Local arcade records: score + tokens, not score alone. Playback mode and model stay visible; different starts/providers are not a head-to-head ranking. ≥ means partial evidence, not free usage or a known final score.</p>
+<details><summary>All recorded attempts & score evidence</summary><p class="small">Ranked benchmarks and unranked live attempts are separate. A stopped attempt is not a completed game.</p>
+<div class="scores"><table><thead><tr><th>Game</th><th>Score</th><th>Result</th><th>Mode / challenge</th><th>Player handle</th><th>Input tokens</th><th>Output tokens</th><th>Total tokens</th><th>Evidence</th></tr></thead><tbody id="scores"></tbody></table></div></details>
+<p class="small">Tokens include separate startup, gameplay, completion and improvement-review workflows plus HUD inference. Rejected replies count. Missing usage stays incomplete; development/discovery/navigation are outside this scope. Tokens are not dollars or an all-cost winner.</p>
 <h2>Practice progress</h2><pre id="progress">No endpoint recorded yet.</pre>
 <div class="intent"><label>Game <select id="practice-game"></select></label><label>Increment X <input id="practice-increment" type="number" min="1" max="100000" value="100" style="width:110px"></label><button id="practice-preview">Preview best score + X goal</button></div>
 <p class="small" id="practice-goal">Preview only: no automatic launch, resume, budget change or leaderboard mixing.</p>
@@ -27,11 +31,13 @@
 Jev locates a playable game.
 You choose when to start it.
 The emulator keeps running
-while decisions are pending.</pre><details><summary>Inferred map & model judgments</summary><pre id="metrics-details">No observations yet.</pre></details><button id="stop" disabled>Stop & save active attempt</button><p class="small">Read-only counters, sampled inputs and gate results; not proof of score or completion. Refreshes every 3 seconds. The game opens in a separate visible browser window.</p></aside></div>
+while decisions are pending.</pre><h3>Current player score</h3><pre id="current-score">No verified player session.</pre><h3>Tokens spent</h3><pre id="token-metrics">No active token report.</pre><details><summary>Inferred map & model judgments</summary><pre id="metrics-details">No observations yet.</pre></details><button id="stop" disabled>Stop & save active attempt</button><p class="small">Read-only counters, sampled inputs and gate results; not proof of score or completion. Refreshes every 3 seconds. The game opens in a separate visible browser window.</p></aside></div>
 <footer>Loopback-only prototype. No ROMs or credentials are uploaded by this page. Game selection judgments and usage are saved locally.</footer></main>
-<script>
+<script src="/atari-controller.js"></script><script>
 let state,token,selected,pending=false;const $=id=>document.getElementById(id);
 function text(tag,value){const e=document.createElement(tag);e.textContent=value;return e}
+function tokenCount(usage,key){const n=usage?.[key];return n===null||n===undefined?'Unknown':(usage.complete?'':'≥ ')+n.toLocaleString()}
+function handle(row){return row.participant?.name||(row.model||row.player||'UNKNOWN').toUpperCase().replaceAll(':','-')}
 async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Arcade-Token':token},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw Error(v.error||r.status);return v}
 function render(){
  $('provider').textContent=(state.inference?.provider==='jev'?'HOSTED JEV':'OLLAYA CLI')+' · '+(state.inference?.model||'unknown')+' · NO HIDDEN RESETS';
@@ -48,17 +54,37 @@ function render(){
  $('progress').textContent=endpoints.length?endpoints.map(p=>{const r=p.latest,e=r.endpoint;return p.game+' · '+r.stop_reason+'\nlast observed frame '+(e.capture_interval?.game_after??'setup only')+' · player '+JSON.stringify(e.player_box)+' · targets '+e.observed_targets+'\nbest supported score '+(p.best_supported_score??'unknown')+' · '+r.run;}).join('\n\n'):'No endpoint recorded yet. New attempts will retain their last observed position and stop evidence.';
  $('games').replaceChildren();
  for(const g of state.games){const c=text('div','');c.className='card'+(selected===g.id?' selected':'');c.append(text('h3',g.title),text('p',g.goal));const note=text('p',g.available?'Continuous adapter ready':'Continuous adapter/setup pending');note.className='badge';c.append(note);const b=text('button','Start '+g.title);b.className='primary';b.disabled=!g.available||!!state.active?.running;b.onclick=async()=>{b.disabled=true;try{const v=await post('/api/start',{game:g.id});$('navigation').textContent='Opening '+g.title+' · one attempt · '+v.run;await refresh()}catch(e){$('navigation').textContent=e.message}};c.append(b);$('games').append(c)}
- $('scores').replaceChildren();
+  $('scores').replaceChildren();
+  $('best-scores').replaceChildren();
+  for(const g of state.games){
+   const best=state.scores.filter(r=>r.game===g.id&&r.score!==null).sort((a,b)=>b.score-a.score||Number(!!b.token_usage?.complete)-Number(!!a.token_usage?.complete)||(a.token_usage?.total_tokens??Infinity)-(b.token_usage?.total_tokens??Infinity))[0];
+   if(!best&&!g.available)continue;
+   const c=text('div','');c.className='card score-card';c.append(text('h3',g.title),text('strong',best?(best.score_coverage_complete===false?'≥ ':'')+best.score.toLocaleString():'Score unknown'));
+   c.append(text('p',best?handle(best)+' · '+best.mode+' · '+(best.ranked?'ranked benchmark':'reviewed, unranked'):'First-stage goal: clear one round; not yet verified.'));
+   c.append(text('p',best?'TOKENS '+tokenCount(best.token_usage,'total_tokens')+' · in '+tokenCount(best.token_usage,'input_tokens')+' / out '+tokenCount(best.token_usage,'output_tokens'):'TOKENS unknown'));
+   if(best){const a=text('a','Watch best recorded run');a.href=best.replay;a.target='_blank';a.rel='noopener';c.append(a)}
+   $('best-scores').append(c);
+  }
   const results=state.scores.sort((a,b)=>a.game.localeCompare(b.game)||a.mode.localeCompare(b.mode)||a.challenge.localeCompare(b.challenge)||(b.score??-1)-(a.score??-1));
-  for(const r of results){const tr=text('tr','');for(const v of [r.game,r.score===null?'Pending review':r.score.toLocaleString(),r.ranked?'ranked benchmark':r.score===null?r.status:'reviewed · unranked',r.mode+' / '+r.challenge.slice(0,8),(r.provider||r.player)+' · '+(r.model||r.player)+' · '+r.reviewer])tr.append(text('td',v));const td=text('td','');for(const [label,path] of [['Replay',r.replay],['HUD',r.hud]]){const a=text('a',label);a.href=path;a.target='_blank';a.rel='noopener';td.append(a,document.createTextNode(' '))}tr.append(td);$('scores').append(tr)}
+   for(const r of results){const tr=text('tr','');for(const v of [r.game,r.score===null?'Pending review':(r.score_coverage_complete===false?'≥ ':'')+r.score.toLocaleString(),r.ranked?'ranked benchmark':r.score===null?r.status:'reviewed · unranked',r.mode+' / '+r.challenge.slice(0,8),handle(r)+' · '+(r.provider||r.player)+' · '+(r.model||'')+' · '+r.reviewer,tokenCount(r.token_usage,'input_tokens'),tokenCount(r.token_usage,'output_tokens'),tokenCount(r.token_usage,'total_tokens')])tr.append(text('td',v));const td=text('td','');for(const [label,path] of [['Replay',r.replay],['HUD',r.hud]]){const a=text('a',label);a.href=path;a.target='_blank';a.rel='noopener';td.append(a,document.createTextNode(' '))}tr.append(td);$('scores').append(tr)}
  const active=state.active;$('stop').disabled=!active?.running;
   if(active){
    const m=active.metrics;
+   const u=active.token_usage;
+   let controller=$('arcade-controller');if(!controller){controller=text('pre','');controller.id='arcade-controller';$('current-score').after(controller)}
+   AtariController.render(controller,m?.held_buttons,{proposed:m?.last_proposed_choice,reason:m?.last_result?.reason,stale:!!(m?.updated_at&&Date.now()-Date.parse(m.updated_at)>10000)});
+   const held=state.scores.find(r=>r.run===active.run)?.attribution_status;
+   $('current-score').textContent=handle(active)+' · '+active.game+'\n'+(held==='legacy/start-mode not verified'?'Score withheld: startup/control attribution unverified.':m?'HUD '+(m.score??'unknown')+' · best observed '+(m.best_supported_score??'unknown'):'Awaiting verified startup.')+(active.completion_check?'\nCompletion audit: '+(active.completion_check.passed?'progress confirmed':'FAIL / needs review'):'');
+   $('token-metrics').textContent=(active.model||'UNKNOWN').toUpperCase().replaceAll(':','-')+'\n'+(u?'INPUT '+tokenCount(u,'input_tokens')+'\nOUTPUT '+tokenCount(u,'output_tokens')+'\nTOTAL '+tokenCount(u,'total_tokens')+'\nRecorded replies + HUD; includes rejected actions.'+(!u.complete?'\nIncomplete: unreported/unfinished usage may be missing.':''):m?'INPUT '+m.input_tokens.toLocaleString()+'\nOUTPUT '+m.output_tokens.toLocaleString()+'\nKNOWN TOTAL '+(m.input_tokens+m.output_tokens).toLocaleString()+'\nCompleted replies only; includes rejected actions.'+(m.pending||m.failed||m.cancelled?'\nIncomplete: pending/failed/cancelled usage may be missing.':''):'Usage not reported yet.');
+   if(u?.by_phase)$('token-metrics').textContent+='\n'+Object.entries(u.by_phase).map(([phase,usage])=>phase.toUpperCase()+' '+tokenCount(usage,'total_tokens')).join('\n');
+   let report=$('improvement-link');if(!report){report=text('a','');report.id='improvement-link';$('token-metrics').after(report)}
+   report.textContent=active.loss_review?'Read end-of-attempt improvement handoff':'';
+   if(active.loss_review){report.href='/runs/'+active.run+'/'+active.loss_review.document;report.target='_blank';report.rel='noopener'}
    $('metrics').textContent='[ '+active.phase.toUpperCase()+' ]\n'+active.provider+' · '+active.model+'\n'+(active.practice?((active.practice.resume_from?'RESUMED':'FRESH')+' PRACTICE · '+active.practice.metric+' target '+active.practice.target+' · cap '+active.practice.segment_frames+' frames\n'):'')+(active.error?active.error+'\n':'')+(m?.analytics||(m?'requests '+m.requests+' · applied '+m.applied+'\nLegacy report; pending timing/held inputs unknown.':active.game+'\n'+active.run));
    $('metrics-details').textContent=m?.ascii||'No observations yet.';
    const age=m?.updated_at?Date.now()-Date.parse(m.updated_at):null;
    $('feed-status').textContent=!active.running?'Saved/stopped report, not live gameplay.':age!==null&&age>10000?'Reporting stalled; last telemetry is over 10 seconds old.':'Reporting connected; counters measured, objects inferred.';
-  }else{$('metrics').textContent='[ NO ACTIVE ATTEMPT ]';$('metrics-details').textContent='No observations yet.';$('feed-status').textContent='Reporting connected; no active attempt.'}
+   }else{$('metrics').textContent='[ NO ACTIVE ATTEMPT ]';$('current-score').textContent='No verified player session.';if($('arcade-controller'))AtariController.render($('arcade-controller'),null);if($('improvement-link'))$('improvement-link').textContent='';$('metrics-details').textContent='No observations yet.';$('token-metrics').textContent='No active token report.';$('feed-status').textContent='Reporting connected; no active attempt.'}
 }
 async function refresh(){const r=await fetch('/api/state');if(!r.ok)throw Error('Front page unavailable');state=await r.json();token=state.token;render()}
 async function recommend(){if(pending)return;pending=true;$('recommend').disabled=true;$('navigation').textContent='Jev is locating a playable game…';try{const r=await post('/api/recommend',{intent:$('intent').value});selected=r.choice==='wait'?null:r.choice;$('navigation').textContent='Jev: '+r.choice+' · '+r.readiness+' · confidence '+(r.confidence??0).toFixed(2)+' — click Start for one visible attempt.';render()}catch(e){$('navigation').textContent='Jev navigation unavailable: '+e.message}finally{pending=false;$('recommend').disabled=false}}

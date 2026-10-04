@@ -1,6 +1,6 @@
 # Atari open tasks
 
-**Focus: make Dig Dug playable and reusable before adding another game.**
+**Focus: visible local AI play, supported scores/costs, and one stage clear per game.**
 This is the single open-work checklist. Remove a task only after tests/recordings
 support its acceptance criteria; do not keep completed checkboxes, release summaries
 or past-work logs here. Git holds change history; local run artifacts hold evidence.
@@ -10,6 +10,15 @@ options require a reproducible local bottleneck and explicit user approval;
 never switch automatically. See [local models](OLLAYA-MODELS.md).
 
 ## Gameplay milestones — in order
+
+### First-stage arcade goals
+- [ ] Clear Dig Dug's first round with recorded enemy defeats and a supported HUD;
+      a title return, a timer or applied controls alone is not a stage clear.
+- [ ] Clear a Crackpots bug wave and verify its transition from native frames.
+- [ ] Reproduce Space Invaders' first-wave clear with the local Ollaya controller;
+      older paused/hosted evidence is a separate playback/provider contract.
+      Optimize and repeat after playable progress; do not gate ordinary visible
+      attempts behind the later procedure-reuse acceptance bar.
 
 ### 1. Reliable controls
 - [ ] Calibrate narrow role/action judgments on labeled native frames, including
@@ -35,7 +44,7 @@ never switch automatically. See [local models](OLLAYA-MODELS.md).
       to bounded executed inputs and independently supported score changes.
 
 ### 3. Supported score and terminal evidence
-- [ ] Calibrate bottom-right HUD glyphs on labeled frames; reject unreadable or
+- [ ] Complete the partial bottom-right HUD font on labeled frames; reject unreadable or
       unfamiliar glyphs and verify scores over independent capture intervals.
 - [ ] Distinguish active play, respawn, round transition and game over using
       temporal evidence; prevent fire from starting another game after death.
@@ -56,8 +65,8 @@ never switch automatically. See [local models](OLLAYA-MODELS.md).
 ## Current blockers
 
 Role calibration cannot activate a valid discovered controller. Local inference
-can be late, fail allocation or return incorrect/uncertain judgments. Pump success,
-Dig Dug score decoding and terminal detection are not established. See
+can still fail allocation or return incorrect/uncertain judgments. Enemy defeat,
+full Dig Dug HUD coverage and verified stage/terminal detection remain unresolved. See
 [Dig Dug](DIG-DUG.md) for operational details and acceptance requirements.
 
 ## Supporting work
@@ -66,6 +75,10 @@ Dig Dug score decoding and terminal detection are not established. See
       tile/fullscreen/touch/high-DPI layouts, including saved/disconnected states
       and moving sprite/outline alignment. Expose request/source/deadline identity
       and unknown score/terminal state. See [reporting](ASCII-REPORTING-REVIEW.md).
+- [ ] Validate separate lifecycle recipes on the other ROM adapters; reject
+      uncertain or contradictory improvement recommendations. Add labeled
+      demo/active/terminal negatives before generalizing native
+      input-effect proofs to every ROM or trusting automatic improvement routing.
 - [ ] Incorporate the user's visual reference before selecting a procedure diagram;
       no new renderer dependency unless the working workflow requires it.
 - [ ] If local model routing becomes necessary, verify/pin jev-router source/API/
@@ -74,6 +87,12 @@ Dig Dug score decoding and terminal detection are not established. See
       See [routing](VISION-ROUTING.md).
 
 ## Later backlog
+
+- [ ] Add human keyboard/touch challenges with saved player handles, shared start/
+      action contracts and code-controlled score evidence. Do not label an AI run human.
+- [ ] Compare model handles by stage progress, score, tokens, latency and vetoes under
+      matching contracts; extend the attempt-token panel to discovery/navigation/
+      development costs and hardware/time budgets before claiming an all-cost winner.
 
 - [ ] Calibrate Crackpots and Space Invaders terminal signals and natural-end
       attempt/leaderboard eligibility; never use a color-cycle candidate as proof.

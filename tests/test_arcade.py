@@ -53,6 +53,9 @@ class ArcadeTests(unittest.TestCase):
         self.assertFalse(c.due(39));self.assertTrue(c.due(40))
         self.assertEqual(c.state(20)['elapsed_frames'],10)
         with self.assertRaises(ValueError):c.restart(40,choice('reset-game',['reset-game']))
+        result=c.restart_code(50)
+        self.assertEqual(result['source'],'code-fixed-cycle')
+        self.assertFalse(c.due(67));self.assertTrue(c.due(68))
 
     def test_registration_has_complete_reusable_hooks(self):
         for profile in registry().values():

@@ -8,6 +8,7 @@ from playjev.checkpoints import verify
 from playjev.execution import FrameStamp
 from playjev.practice import Goal, plan, validate
 from playjev.scoreboard import eligible
+from test_participation import verified_proof
 
 
 def checkpoint(directory,frames=120,score=10):
@@ -19,6 +20,7 @@ def checkpoint(directory,frames=120,score=10):
     (directory/'checkpoint.json').write_text(json.dumps(row))
     data=b'final';(directory/'final.png').write_bytes(data)
     summary={'game':'crackpots','challenge_id':'same','status':'stopped','game_frames':frames,'checkpoint':row,
+             'participation':verified_proof(directory),
              'score':score,'score_verified':score is not None,
              'score_review':{'evidence':'final.png','evidence_sha256':digest(data)}}
     (directory/'summary.json').write_text(json.dumps(summary))

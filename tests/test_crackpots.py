@@ -45,11 +45,24 @@ class CrackpotsTests(unittest.TestCase):
                  'bugs':[],'bug_tracks':[],'pot_row':46,'window_y':76}
         p=CrackpotsPlayer()
         def answer(choice,options):return {'choice':choice,'confidence':1,'probabilities':{k:float(k==choice) for k in options}}
-        p.request=AsyncMock(return_value={'answers':{'lane':answer('pot_0',['pot_0','hold','scan']),
-                                                    'drop':answer('release',['fire','release'])}})
+        p.request=AsyncMock(return_value={'answers':{'lane':answer('pot_0',['pot_0','hold','scan'])}})
         d=asyncio.run(p.decide({'current':current},GAMES['crackpots']))
         self.assertEqual(d['choice'],'right')
         self.assertLessEqual(d['movement_frames'],26)
+        self.assertFalse(d['drop_authorized'])
+        self.assertEqual(set(p.request.call_args.args[0]['questions']),{'lane'})
+        self.assertFalse(p.auxiliary_questions)
+
+    def test_file_scoped_pursuit_values_expose_relative_directions_without_extra_questions(self):
+        current={'player':{'box':[39,24,45,40]},'pots':[{'box':[36,46,42,47]},{'box':[68,46,74,47]}],
+                 'bugs':[],'bug_tracks':[],'pot_row':46,'window_y':76}
+        p=CrackpotsPlayer();p.policy['include_pursuit_evidence']=True
+        def answer(value):return {'choice':value,'confidence':1,'probabilities':{k:float(k==value) for k in ('pot_0','pot_1','hold','scan')}}
+        p.request=AsyncMock(return_value={'answers':{'lane':answer('pot_1')}})
+        result=asyncio.run(p.decide({'current':current},GAMES['crackpots']))
+        request=p.request.call_args.args[0]
+        self.assertEqual(request['questions']['lane']['criteria']['pot_1']['needed_direction'],'right')
+        self.assertEqual(result['choice'],'right');self.assertEqual(set(request['questions']),{'lane'})
 
     def test_activision_hud_and_six_digit_assembly(self):
         im=Image.new('RGB',(160,210))

@@ -5,8 +5,8 @@ Run commands from `PlayJev/`; use new output names, never overwrite evidence.
 - Default: Ollaya CLI (`kev:0.8b`). Never call its HTTP API or silently use hosted Jev.
 - Hosted Jev requires explicit selection; running attempts keep their original provider.
 - Evaluate local Ollaya text/vision first; hosted escalation requires a measured bottleneck and approval.
-- Dig Dug is experimental: score/terminal unknown, classification observation-only, local replies stale.
-- No supported Dig Dug high score, completed game, or working discovered-controller procedure yet.
+- Dig Dug uses one compact action judgment; HUD digits 0–3 are supported, others remain unknown.
+- No verified Dig Dug stage clear, completed game, or working discovered-controller procedure yet.
 - Fresh/resumed practice is unranked. Frame targets measure budget, not survival or digging progress.
 - Failures release inputs and stop/save; unusable classifications cannot activate controllers.
 - No delegation this iteration. Keep ROMs, credentials, states, images and videos out of Git.
@@ -82,7 +82,7 @@ Leaderboard only includes supported score evidence; unknown scores never become 
 Live/browser sizing and saved/disconnected reporting validation remain pending.
 Reporting: [browser panels](docs/ASCII-REPORTING-REVIEW.md); local vision: [Ollaya models](docs/OLLAYA-MODELS.md).
 ASCIIFlow is a candidate editor, not the chosen diagram; the user's visual reference is still pending.
-Focus: reliable controls -> calibrated pumping -> supported score/terminal evidence -> repeatable runs/procedures.
+Focus: visible play/one stage per game, supported score+tokens; then optimize and extract repeatable procedures.
 ## One-command progress save (explicit invocation authorizes the bounded save)
 ```bash
 ./scripts/check-in "Describe source progress without claiming completed gameplay"

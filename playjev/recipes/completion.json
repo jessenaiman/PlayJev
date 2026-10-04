@@ -1,0 +1,12 @@
+{
+  "session": {
+    "type": "choice",
+    "instructions": "Did this attempt start under verified player control AND increase its supported HUD score? Use checks and native evidence, not commands issued or a demo HUD. Classify this completed attempt audit, not a game win. A user stop or suspected ending is not verified game over. Do not recommend strategy changes here.",
+    "criteria": {
+      "progressed": "Started under verified control and supported score increased",
+      "no_gain": "Started under verified control but no supported score increase",
+      "not_started": "Demo/unstarted or player-control evidence failed",
+      "unknown": "Evidence incomplete or contradictory"
+    }
+  }
+}

@@ -87,7 +87,9 @@ Start with the [Jev Arcade front page](docs/ARCADE.md):
 ```
 
 It shows evidence-linked scores, uses typed judgments to locate a playable game, and starts one
-continuous attempt on your click. Live ASCII metrics appear beside the game and on
+visible attempt with model-named local records and input/output/total token costs.
+Incomplete usage is marked, not treated as zero; human challenges remain planned.
+Continuous play starts on your click. Live ASCII metrics appear beside the game and on
 the front page. [Outstanding work and iteration order](docs/ATARI-TASKS.md).
 Compact commands/files: [ATARI2600.md](ATARI2600.md) (100-line maximum).
 One-command save: `./scripts/check-in "Describe the progress"` — source checks,

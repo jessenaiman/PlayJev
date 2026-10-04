@@ -20,6 +20,7 @@ from .transports import inference
 from .progress import load as load_progress, next_target
 from .practice import plan as practice_plan
 from .checkpoints import verify as verify_checkpoint
+from .usage import token_usage, player_identity
 
 
 def catalog(root=ROOT):
@@ -74,7 +75,13 @@ class Arcade:
                     'reviewer':r.get('score_review',{}).get('reviewer','legacy'),'status':r['status'],
                     'seconds':r['game_frames']/60,'player':r['config'].get('player','unknown'),
                     'provider':r['config'].get('provider','jev' if (r['config'].get('model') or '').startswith('jev-') else 'unknown'),
-                    'model':r['config'].get('model'),
+                    'model':r['config'].get('model'),'participant':player_identity(r['config']),
+                    'token_usage':token_usage(directory,r),
+                    'score_coverage_complete':r.get('score_coverage_complete',True),
+                    'observed_hud_score':r.get('observed_hud_score',r.get('score')),
+                    'attribution_status':'control verified' if r.get('participation',{}).get('verified') else 'legacy/start-mode not verified',
+                    'evaluation_outcome':r.get('evaluation_outcome','not audited'),
+                    'improvement':f'/runs/{relative}/{r["loss_review"]["document"]}' if r.get('loss_review') else None,
                     'replay':f'/runs/{relative}/replay.html','hud':f'/runs/{relative}/{r.get("score_review",{}).get("evidence","final.png")}'})
         return result
 
@@ -100,6 +107,14 @@ class Arcade:
             if path.is_file():
                 try:active['metrics']=json.loads(path.read_text())
                 except (OSError,ValueError):pass
+            directory=self.root/'runs'/active['run']
+            if directory.is_dir():
+                summary={}
+                try:summary=json.loads((directory/'summary.json').read_text())
+                except (OSError,ValueError):pass
+                active['token_usage']=token_usage(directory,summary)
+                active['completion_check']=summary.get('completion_check')
+                active['loss_review']=summary.get('loss_review')
         return {'games':[{k:v for k,v in e.items() if k!='challenge'} for e in catalog(self.root)],
                 'scores':self.scores(),'active':active,'recommendation':recommendation,'inference':selected,
                 'progress':load_progress(p.parent for p in (self.root/'runs').rglob('summary.json')),
@@ -227,9 +242,10 @@ def handler(app):
             try:
                 if path=='/api/state':return self.send({**app.state(),'token':app.token})
                 if path=='/':file=app.root/'games'/'arcade'/'index.html'
+                elif path=='/atari-controller.js':file=app.root/'games/arcade/atari-controller.js'
                 elif path.startswith('/runs/'):
                     file=(app.root/path.lstrip('/')).resolve()
-                    if not file.is_relative_to((app.root/'runs').resolve()) or file.suffix not in ('.html','.webm','.png'):
+                    if not file.is_relative_to((app.root/'runs').resolve()) or (file.suffix not in ('.html','.webm','.png') and not (file.name.startswith('improvement') and file.suffix=='.md')):
                         return self.send({'error':'Not found'},404)
                 else:return self.send({'error':'Not found'},404)
                 if not file.is_file():return self.send({'error':'Not found'},404)

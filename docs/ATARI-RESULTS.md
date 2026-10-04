@@ -12,7 +12,11 @@ Compare only matching game/challenge/playback contracts. Keep paused calibration
 capped smoke runs, fresh/resumed practice and natural-end evaluation separate.
 Retain failed or accidentally restarted attempts unranked; never silently discard
 them or treat a stop, empty screen, elapsed budget or model confidence as completion.
-Unknown scores stay unknown. Dig Dug HUD/terminal calibration is still pending.
+Unknown scores stay unknown. Dig Dug's partial HUD font reports supported observed
+values with coverage disclosed; full HUD/terminal/stage calibration remains pending.
+Scorecards include model handles and recorded input/output/total tokens. Missing
+usage is unknown or a marked lower bound; never treat it as a free winning attempt.
+See [arcade cost scope and local event files](ARCADE.md#local-arcade-records-and-token-costs).
 
 ROMs, API secrets and generated recordings are not committed. Keep `runs/` on disk
 or back it up separately; Git history does not include those artifacts.

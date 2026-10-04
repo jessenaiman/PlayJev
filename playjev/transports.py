@@ -59,13 +59,20 @@ class HostedJevTransport:
 
 class RecordedTransport:
     """Keep exact logical requests even when cancellation prevents a decision row."""
-    def __init__(self,transport,path):
-        self.transport=transport;self.path=path;self.context=None;self.sequence=0
+    def __init__(self,transport,path,events=None):
+        self.transport=transport;self.path=path;self.context=None;self.sequence=0;self.events=events
+        if path.is_file():
+            with path.open() as file:
+                for line in file:
+                    row=json.loads(line);self.sequence=max(self.sequence,row['sequence']+1)
 
     def write(self,sequence,event,**fields):
         with self.path.open('a') as log:
             log.write(json.dumps({'sequence':sequence,'event':event,
                 'at':datetime.now(timezone.utc).isoformat(),**fields})+'\n')
+        if self.events:
+            self.events.write('judgment-'+event,'judgment.'+event,request_sequence=sequence,
+                              **{'context':self.context,**fields})
 
     async def request(self,body):
         sequence=self.sequence;self.sequence+=1

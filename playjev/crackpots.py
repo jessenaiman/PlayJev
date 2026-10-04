@@ -1,5 +1,7 @@
 """Read-only Crackpots raster geometry and short-horizon interception."""
 import io
+import json
+from pathlib import Path
 from PIL import Image
 from .invaders import components
 from .challenge import JevPlayer
@@ -36,7 +38,11 @@ def geometry(frame):
             if 4<=x2-x+1<=12 and 3<=y2-y+1<=9 and 8<=obj['pixels']<=65:
                 if obj['pixels']==(x2-x+1)*(y2-y+1):continue
                 objects.append({**obj,'color':color})
+    # Native initial roof = 46; each lost building layer lowers it by eight.
+    # Six losses reach 94. A candidate stops play; it is not model-certified death.
+    active=bool(player and pots and 46<=plant_row<94)
     return {'coordinates':'160x210; x right, y down','player':player,'pots':pots,'bugs':objects,
+            'active_play_evidence':active,'final_building_loss_candidate':bool(player and pots and plant_row>=94),
             'pot_row':plant_row,'window_y':plant_row+30,'background_black':False,
             'role_hint':'ROM-specific visual estimates. Gardener is gold; six roof pots have green foliage. Bugs climb; windows and bricks are not bugs. Missing gardener may be flicker. Building layers can collapse, moving the roof downward.'}
 
@@ -90,34 +96,38 @@ def overlay(current):
 
 
 class CrackpotsPlayer(JevPlayer):
+    auxiliary_questions=False
+
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.last_target=None
+        self.policy=json.loads((Path(__file__).parent/'policies'/'crackpots.json').read_text())
 
     async def decide(self,state,game):
         current=state['current'];px,lanes=interception(current)
-        evidence={'player_x':px,'previous_target_x':self.last_target,'pot_row':current['pot_row'],'window_y':current['window_y'],
-                  'bugs':current.get('bug_tracks',[]),'lanes':lanes,
+        evidence={'player_x':px,'previous_target_x':self.last_target,
                   'drop_ready':any(l['ready_to_drop'] for l in lanes),
-                  'estimates':{'gardener_speed_px_per_frame':0.7,'pot_fall_px_per_frame':1.6,
-                               'warning':'Timing is initially estimated, not measured. Linear extrapolation is less reliable for blue wiggles and green zig-zags.'}}
+                  'estimates':'Code supplies bounded, estimated interception candidates; not guaranteed catches.'}
         criteria={lane['id']:{'action':'Align with this observed available pot','x':lane['x'],
                              'catchable_bugs':lane['catchable_bugs'],'arrival_frames':lane['arrival_frames'],
                              'ready_to_drop':lane['ready_to_drop']} for lane in lanes}
         criteria.update(hold='Wait for reliable gardener/bug observations',scan='Move toward the central pots to prepare for a new bug')
+        if self.policy['include_pursuit_evidence']:
+            evidence['bugs']=[{'x':b['x'],'y':b['y'],'vx':b['vx'],'vy':b['vy']} for b in current.get('bug_tracks',[])[:6]]
+            for lane in lanes:
+                criteria[lane['id']]['needed_direction']='unknown' if px is None else 'left' if lane['x']<px-3 else 'right' if lane['x']>px+3 else 'aligned'
         body={'model':self.model,'state':evidence,'questions':{
-            'lane':{'type':'choice','instructions':'Choose a pot with catchable_bugs>0, preferring ready_to_drop or short arrival_frames. Keep previous_target_x only while its catchable_bugs remains positive; otherwise switch to a catchable lane. When bugs are present, a zero-catchable lane is a miss. If no pots have catchable bugs, hold or prepare centrally. These are short-term estimated intercepts, not guaranteed catches.', 'criteria':criteria},
-            'drop':{'type':'choice','instructions':'Should Potsy release a pot now? `drop_ready` means an observed pot is aligned within four pixels AND an approaching bug is predicted to intersect its falling path before reaching the window. Choose fire when drop_ready is true; release otherwise.', 'criteria':{'fire':'Release the aligned flowerpot into the predicted bug path','release':'No aligned interception opportunity; wait'}}}}
+            'lane':{'type':'choice','instructions':self.policy['lane_instructions'], 'criteria':criteria}}}
         response=await self.request(body)
-        gates={k:self.validate_choice(response['answers'][k],body['questions'][k]['criteria']) for k in ('lane','drop')}
+        gates={'lane':self.validate_choice(response['answers']['lane'],criteria)}
         lane=next((l for l in lanes if l['id']==gates['lane']['choice']),None)
         target=lane['x'] if lane else 80 if gates['lane']['choice']=='scan' else px
         self.last_target=target
         error=target-px if target is not None and px is not None else 0
         direction='left' if error<-3 else 'right' if error>3 else ''
-        fire=gates['drop']['choice']=='fire' and px is not None
+        fire=bool(evidence['drop_ready'] and px is not None)
         choice='+'.join(([direction] if direction else [])+(['fire'] if fire else [])) or 'noop'
         duration=min(26,max(1,round(abs(error)/0.7))) if direction else 30
         return {'request':body,'response':response,'components':gates,'choice':choice,
-                'confidence':min(g['confidence'] for g in gates.values()),'movement_frames':duration,
-                'rest_choice':'noop','target_x':target,'composition':'crackpots-interception-lane+drop-v2'}
+                'confidence':gates['lane']['confidence'],'movement_frames':duration,'drop_authorized':fire,
+                'rest_choice':'noop','target_x':target,'composition':'crackpots-model-lane/code-fresh-interception-trigger-v3'}

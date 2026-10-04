@@ -84,9 +84,28 @@ def read_score(game, frame):
     if game=='space-invaders':extractor,font=digit_grids,FONT
     elif game=='crackpots':
         from .crackpots_score import digit_grids as extractor, FONT as font
+    elif game=='dig-dug':
+        from .digdug_score import digit_grids as extractor, FONT as font
     else:return None
     grids=extractor(frame)
     return assemble(grids,{'answers':exact_answers(grids,font)},font)['value']
+
+
+class LiveScore:
+    """Confirm a HUD value on nonoverlapping native capture intervals, without inference."""
+    def __init__(self):
+        self.previous=None;self.score=None;self.best=None;self.evidence=[]
+
+    def observe(self,value,stamp,evidence):
+        row={'value':value,'before':stamp.before,'after':stamp.after,'sha256':stamp.sha256,'evidence':evidence}
+        independent=self.previous and self.previous['after']<stamp.before
+        self.score=None
+        if value is not None and independent and self.previous['value']==value:
+            self.score=value;self.best=value if self.best is None else max(self.best,value)
+            self.evidence=[self.previous,row]
+        self.previous=row
+        return {'score':self.score,'best_supported_score':self.best,'score_evidence':self.evidence if self.score is not None else [],
+                'score_status':'supported native HUD' if self.score is not None else 'unknown / awaiting matching native captures'}
 
 
 async def collect(directory,typed=False):
@@ -99,8 +118,10 @@ async def collect(directory,typed=False):
         extractor,font=digit_grids,FONT
     elif summary['game']=='crackpots':
         from .crackpots_score import digit_grids as extractor, FONT as font
+    elif summary['game']=='dig-dug':
+        from .digdug_score import digit_grids as extractor, FONT as font
     else:
-        raise ValueError('HUD layout supports Space Invaders and Crackpots')
+        raise ValueError('Unsupported HUD layout')
     cache, observations = {}, []
     from .transports import inference
     provider=summary.get('config',{}).get('provider','ollaya')
@@ -156,20 +177,31 @@ async def collect(directory,typed=False):
                  ((i>0 and independent(r,observations[i-1])) or
                   (i+1<len(observations) and independent(r,observations[i+1])))]
     best = max(supported,key=lambda r:r['value'],default=None)
+    summary['observed_hud_score']=best['value'] if best else None
     scorer=provider if typed else 'exact-templates'
     report = {'schema':'jev-hud-v1','provider':scorer,'model':model if typed else None,'unique_requests':int(typed and bool(unique)),'unique_glyphs':len(unique),'resolved_blank_glyphs':len(blank_glyphs),'request':body if typed else None,'response':result,'observations':observations,
+              'coverage_complete':len(accepted)==len(visible),
               'accepted_frames':len(accepted),'highest_supported_score':best['value'] if best else None,
                'visible_hud_frames':len(visible),'duplicate_final_excluded':duplicate_final,
                'note':'Typed digit choices checked against literal glyph templates and repeated HUD evidence. Not human confirmation; not a game-over judgment.'}
     (directory/'hud-jev.json').write_text(json.dumps(report,indent=2))
     summary['jev_hud'] = {k:v for k,v in report.items() if k not in ('observations','request','response')}
-    if best and summary['status'] in ('complete','stopped') and len(accepted)==len(visible):
+    partial_digdug=summary['game']=='dig-dug'
+    from .participation import score_attributable
+    attributable=score_attributable(directory,summary)
+    if not attributable:
+        summary.update(score=None,score_verified=False,
+                       score_note='Readable HUD is not attributed to the player: native control/gameplay evidence missing or held for review.')
+    if best and attributable and summary['status'] in ('complete','stopped') and (len(accepted)==len(visible) or partial_digdug):
         if summary.get('score_verified'):
             summary.setdefault('prior_score_reviews',[]).append({'score':summary['score'],'review':summary.get('score_review')})
         summary.update(score=best['value'],score_verified=True,score_review={
             'method':'typed-digit-choices+exact-pixel-template+temporal-repeat',
             'reviewer':scorer+'-pipeline','provider':scorer,'model':result.get('model'),'evidence':best['evidence'],'evidence_sha256':best['sha256'],
             'report':'hud-jev.json','note':report['note']})
+        if partial_digdug:
+            summary['score_coverage_complete']=report['coverage_complete']
+            summary['score_note']='Highest supported observed HUD value with a partial font; unreadable/unseen glyphs stay unknown. Not proof of the final/true peak score or a stage clear.'
     (directory/'summary.json').write_text(json.dumps(summary,indent=2))
     records = [json.loads(l) for l in (directory/'decisions.jsonl').read_text().splitlines()]
     replay_html(directory,summary,records)

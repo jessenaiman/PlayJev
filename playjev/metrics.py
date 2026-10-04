@@ -50,6 +50,8 @@ class Metrics:
               'released' if not buttons else ','.join({0:'fire',4:'up',5:'down',6:'left',7:'right'}.get(b,str(b)) for b in buttons))
         result=self.last_result or {'outcome':'none','reason':'no result yet'}
         analytics=[f'[{self.game.upper()}] {phase}',f'frame {frame} | {frame/60:.2f}s',
+                   f'score {current.get("score") if current.get("score") is not None else "unknown"} | best supported {current.get("best_supported_score") if current.get("best_supported_score") is not None else "unknown"}',
+                   'stage clear: unknown | terminal: unknown',
                    f'requests {self.requests} | replies {self.completed}',
                    f'applied {self.applied} | rejected {self.completed-self.applied}',
                    f'stale {self.stale} | veto {self.vetoes}',
@@ -81,8 +83,12 @@ class Metrics:
             value=answer.get('noul')
             lines.append(f'{name} p(yes): {value:.2f}' if isinstance(value,(int,float)) else f'{name}: unknown')
         return {**self.counters(),'game':self.game,'game_frame':frame,'pending':pending,'requests':self.requests,'applied':self.applied,
+                 'score':current.get('score'),'best_supported_score':current.get('best_supported_score'),
+                 'score_status':current.get('score_status','unknown'),'score_evidence':current.get('score_evidence',[]),
+                 'stage_clear':None,'terminal':None,
                  'rejected':self.completed-self.applied,'phase':phase,'pending_wait_ms':wait_ms,'pending_age_frames':pending_age,
-                 'held_buttons':buttons,'last_result':self.last_result,'analytics':'\n'.join(analytics),
+                  'held_buttons':buttons,'last_result':self.last_result,'analytics':'\n'.join(analytics),
+                  'last_proposed_choice':latest.get('decision',{}).get('choice'),
                 'vetoes':self.vetoes,'stale':self.stale,'input_tokens':self.input_tokens,'output_tokens':self.output_tokens,
                 'latency_ms':self.latency_ms,'clock':clock.state(frame),'ascii':'\n'.join(lines),
                 'updated_at':datetime.now(timezone.utc).isoformat(),'note':'Counters measured; ASCII objects inferred; confidence not proof.'}

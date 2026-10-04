@@ -45,6 +45,7 @@ def verify(directory, metadata):
             or summary.get('status')!='stopped' or summary.get('error')
             or summary.get('game_over_candidate') or summary.get('game_completed')):
         raise ValueError('Checkpoint source is failed, terminal, or not bound to its summary')
+    if summary.get('attribution_hold'):raise ValueError('Checkpoint gameplay mode is disputed; do not resume demo evidence')
     for key in ('game','challenge_id','rom_sha256','assets_sha256'):
         if row.get(key)!=metadata[key]:raise ValueError('Checkpoint '+key+' mismatch')
     if summary.get('game')!=row['game'] or summary.get('challenge_id')!=row['challenge_id']:

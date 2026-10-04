@@ -38,6 +38,8 @@ class LiveGame:
     score_collector: Callable
     source: str
     terminal_note: str
+    terminal_reason: str = 'three-background-color-observations'
+    inference_ready: Callable = lambda current:True
 
 
 def crackpots_track(previous,current,frames):
@@ -55,7 +57,8 @@ def crackpots_prepare(current,decision):
         # An old fire judgment is not enough: the current frame must still
         # contain an aligned pot with a predicted interception opportunity.
         _,lanes=interception(current)
-        fire=decision['components']['drop']['choice']=='fire' and any(l['ready_to_drop'] for l in lanes)
+        trigger=decision.get('drop_authorized',decision.get('components',{}).get('drop',{}).get('choice')=='fire')
+        fire=trigger and any(l['ready_to_drop'] for l in lanes)
         choice='+'.join(([direction] if direction else [])+(['fire'] if fire else [])) or 'noop'
         duration=min(26,max(1,round(abs(error)/0.7))) if direction else 30
     return choice,duration,bool(guard(current,choice))
@@ -69,10 +72,13 @@ def registry():
         'space-invaders':LiveGame('space-invaders','continuous-compact-v1',geometry,invaders_track,
             lambda current:current,invaders_prepare,lambda current:not current['background_black'],
             GatedJevPlayer,collect,'invaders.py','background-color candidate; not verified game over'),
-        'crackpots':LiveGame('crackpots','crackpots-interception-v2',crackpots_geometry,crackpots_track,
-            overlay,crackpots_prepare,lambda current:False,CrackpotsPlayer,crackpots_collect,
-            'crackpots.py','not-yet-validated; use Stop & save'),
-        'dig-dug':LiveGame('dig-dug','experimental-digdug-native-candidates-v1',digdug.geometry,digdug.track,
-            digdug.overlay,digdug.prepare,lambda current:False,digdug.DigDugPlayer,digdug.collect,
-            'digdug.py','experimental: score, rocks/ghosts and game-over detection uncalibrated; fire requires active-play evidence'),
+        'crackpots':LiveGame('crackpots','crackpots-relative-lane-code-trigger-v4',crackpots_geometry,crackpots_track,
+            overlay,crackpots_prepare,lambda current:current.get('final_building_loss_candidate',False),CrackpotsPlayer,crackpots_collect,
+            'crackpots.py','six-layer native roof-loss candidate; not verified game over',
+            'three-native-captures-at-final-building-loss',
+            inference_ready=lambda current:current.get('active_play_evidence',False)),
+        'dig-dug':LiveGame('dig-dug','digdug-single-action-v2',digdug.geometry,digdug.track,
+            digdug.overlay,digdug.prepare,lambda current:not current.get('playfield_visible',False),digdug.DigDugPlayer,digdug.collect,
+            'digdug.py','partial HUD font; missing playfield stops without restart; stage/game-over proof pending',
+            'three-native-captures-without-known-playfield',lambda current:current.get('active_play_evidence',False)),
     }

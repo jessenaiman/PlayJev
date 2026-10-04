@@ -24,3 +24,9 @@ class DecisionClock:
         self.interval=validated['choice'];self.started_frame=frame
         self.next_frame=frame+INTERVALS[self.interval]
         return validated
+
+    def restart_code(self,frame,interval='normal'):
+        if interval not in INTERVALS:raise ValueError('Invalid code-owned cycle')
+        self.interval=interval;self.started_frame=frame
+        self.next_frame=frame+INTERVALS[interval]
+        return {'source':'code-fixed-cycle','interval':interval,'frames':INTERVALS[interval]}

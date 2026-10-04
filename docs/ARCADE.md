@@ -8,6 +8,63 @@ Open `http://127.0.0.1:8765/`. It shows reviewed scores and evidence links, incl
 unranked live attempts. The same evidence/hash verifier serves the static scoreboard
 and the front page. Games, challenge IDs and playback modes stay distinct.
 
+## Local arcade records and token costs
+
+The high-score cards show model handles such as `KEV-0.8B` with their supported HUD
+score and input/output/total tokens. The expandable attempt table retains full
+provider/model, playback mode, challenge and replay/HUD links. Records live in each
+local run's `summary.json`, `hud-jev.json` and recordings; no run evidence enters Git.
+The live token panel follows request logs, not only applied actions: stale/vetoed
+replies and HUD inference count too. Startup, gameplay, completion and improvement
+review have separate logs and phase totals; all count in the attempt total.
+Missing/cancelled usage is unknown or a marked
+`≥` lower bound, never a free zero. Legacy records remain explicitly incomplete.
+This first cost scope excludes development, discovery and game-selection calls;
+tokenizers differ and local tokens are not billed dollars or free machine resources.
+Score alone does not establish a competition winner. Human controls/handles and
+matching human-vs-model/model-vs-model challenges are open work, not enabled features.
+For equal observed scores, the featured card prefers complete token accounting,
+then the smaller recorded token total; this is not a cross-contract competition rank.
+
+`events.jsonl` is the shared live-run stream: judgment requests/replies/failures,
+native HUD observations and bounded action outcomes carry frame/request context and
+code-owned classifications (move/pump/drop/shoot/abstain, accepted/rejected reasons).
+No second model classifies already-known event types on the control path.
+`inference.jsonl` and `decisions.jsonl` remain compatibility/evidence views; do not
+sum all three and double-count their duplicate logical replies.
+
+## Separate lifecycle recipes and improvement handoffs
+
+`playjev/recipes/startup.json` asks only whether verified native input-effect probes
+show a started, controllable game. Setup branches restore the same state and their
+callbacks are disclosed; their moves/scores are not LLM gameplay. Unknown or failed
+startup stops before action inference. A sprite, HUD or issued command is insufficient.
+Crackpots legacy records without this proof are withheld from player high scores;
+their observations, tokens and recordings remain local calibration evidence.
+
+`playjev/recipes/completion.json` independently audits startup and supported score
+increase after saving the run. Missing control proof, no score gain or an inconsistent
+classification flags evaluation failure. A natural-end candidate is not verified loss,
+and a passed progress audit is not a stage clear or completed game.
+
+`loss_review.py` then runs a bounded improvement-only recipe and writes `improvement.md`
+plus `loss-review.json`. It supplies measured native movement/noop proportions,
+unused controls, the last moves and a recorded missed-intercept estimate. Most-of-game
+stationarity is reported as a fact about sampled active intervals; equal control use
+is not the objective. The template proposes at most two known-file changes. Small
+rubric/value edits target `playjev/policies/crackpots.json`; lifecycle/perception/
+execution refactors, source mismatches and uncertain judgments return to the parent.
+No automatic patch, retraining or directory-scanning worker is enabled. Validate the
+report against native frames before accepting it; alternative outcomes are hypotheses.
+An explicit `python -m playjev.loss_review RUN --rereview` preserves earlier reports
+and counts the extra review tokens. Startup/completion questions never join the action
+request. Demo loops can seed role/motion calibration, never a player high score.
+
+The read-only ASCII joystick animates sampled held inputs with a red fire button.
+Proposals/rejection reasons are separate; the display cannot apply inputs and does
+not establish that a sprite responded. The emulator view updates faster than the
+front-page telemetry, which may miss brief button holds.
+
 Loading the page makes no inference call. Choose **Ollaya CLI · local** (default) or
 **Jev · hosted** with the score-page selector, then explicitly request a recommendation.
 The selected model classifies readiness from intent, adapters and active session.
@@ -66,17 +123,19 @@ See [Dig Dug discovery and classification](DIG-DUG.md) for the new experimental 
   use either; no hidden hosted fallback. Failed local inference is visible.
 - `execution.py` / `live-controls.js`: capture frame intervals, conservative
   deadlines, execution-time freshness checks, frame-based input expiry and release.
-- `timing.py`: a frame clock measured in code. The selected model chooses 6/18/30/60 frames
-  before the next decision cycle. This restarts a decision cycle, **not the game**.
+- `timing.py`: code owns the frame clock. Compact Dig Dug/Crackpots use an 18-frame cycle;
+  other policies can ask a 6/18/30/60-frame cycle Choice. Neither restarts the game.
 - `spatial.py`: source pixels → normalized fractions → rendered-content projection.
-  Two diagnostic Nouls check usable perception and consistent mapping. They share
-  the gameplay/timing request and are not substitutes for pixel or arithmetic tests.
+  Optional diagnostic Nouls check usable perception/mapping on noncompact policies.
+  Compact policies omit them from per-action requests; they never replace pixel/arithmetic checks.
 - `metrics.py`: measured calls/applied actions/vetoes/stale results/usage and inferred
   ASCII objects. Both the game-side panel and front page consume it.
 - `progress.py`: evidence-bound endpoints and practice goal previews. It has no
   controller/reset/resume authority and does not alter leaderboard eligibility.
 - `practice.py` / `checkpoints.py`: explicit bounded practice plans, independent HUD
   goal checks and canonical local checkpoint verification.
+- `usage.py` / `events.py`: evidence-derived attempt tokens, model handles and one
+  classified judgment/observation/action stream; neither grants controller authority.
 - `native.py`: one timeout-bounded native capture contract for live play, checkpoint
   images and paused diagnostics, eliminating duplicated screenshot-Promise handling.
 - `discovery.py`: repeatable initial-load pixel probes and typed object-role hypotheses.

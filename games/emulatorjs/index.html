@@ -3,15 +3,15 @@
 <style>html,body{width:100%;height:100%;margin:0;background:black}
 body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
 #play-area{display:flex;flex:1;min-height:0}#game{flex:1;min-width:0;min-height:0}.ejs_menu_bar{display:none!important}
-#metrics{width:36ch;flex:none;padding:12px;margin:0;box-sizing:border-box;overflow:auto;color:#a9edb6;background:#141927;font:12px/1.4 monospace;white-space:pre}
-@media(max-width:800px){#play-area{flex-direction:column}#metrics{width:100%;max-height:28dvh;font-size:11px}}
+#reporting{width:36ch;flex:none;overflow:auto;color:#a9edb6;background:#141927;font:12px/1.4 monospace}#metrics,#controller{padding:12px;margin:0;white-space:pre}#controller{font:inherit}
+@media(max-width:800px){#play-area{flex-direction:column}#reporting{width:100%;max-height:28dvh;font-size:11px}}
 #status{flex:none;min-height:48px;color:white;font:14px monospace;padding:8px;box-sizing:border-box;overflow-wrap:anywhere}
 button{min-height:36px;margin:4px}</style>
-<div id="play-area"><div id="game"></div><pre id="metrics">[ WAITING FOR START ]
-Live Jev gates and counters will appear here.</pre></div>
+<div id="play-area"><div id="game"></div><div id="reporting"><pre id="controller">[ CONTROLLER INPUT UNKNOWN ]</pre><pre id="metrics">[ WAITING FOR START ]
+Live Jev gates and counters will appear here.</pre></div></div>
 <div id="status">Loading EmulatorJS…</div>
 <canvas id="tracking" style="position:fixed;pointer-events:none;z-index:9999"></canvas>
-<script src="/live-controls.js"></script>
+<script src="/atari-controller.js"></script><script src="/live-controls.js"></script>
 <script>
 // The core letterboxes INSIDE its canvas. CSS canvas bounds alone are not
 // the game rectangle. WebGL's viewport is in backing pixels, bottom-left origin.

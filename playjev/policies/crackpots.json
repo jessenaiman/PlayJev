@@ -1,0 +1,4 @@
+{
+  "include_pursuit_evidence": true,
+  "lane_instructions": "Choose a catchable pot by the bug positions and needed_direction, not its pot_N label. Move left or right to follow the intercept as bugs shift. Prefer ready_to_drop, then short arrival_frames. Do not keep the previous target when it has zero catchable_bugs. If none are catchable, scan centrally or hold. Code handles bounded movement and fresh aligned drops; never restart."
+}

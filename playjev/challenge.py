@@ -161,6 +161,8 @@ class Player(ABC):
 
 
 class JevPlayer(Player):
+    auxiliary_questions = True
+
     def __init__(self, question=None, model="jev-latest", transport=None):
         self.question = question
         self.model = model
@@ -180,11 +182,11 @@ class JevPlayer(Player):
     async def request(self, body):
         if getattr(self,'practice_context',None) is not None:
             body['state']={**body['state'],'practice':self.practice_context}
-        if getattr(self,'decision_timing',None) is not None:
+        if self.auxiliary_questions and getattr(self,'decision_timing',None) is not None:
             from .timing import QUESTION
             body['state']={**body['state'],'decision_clock':self.decision_timing}
             body['questions']={**body['questions'],'cycle':QUESTION}
-        if getattr(self,'accuracy_evidence',None) is not None:
+        if self.auxiliary_questions and getattr(self,'accuracy_evidence',None) is not None:
             from .spatial import QUESTIONS
             body['state']={**body['state'],'accuracy_evidence':self.accuracy_evidence}
             body['questions']={**body['questions'],**QUESTIONS}

@@ -42,6 +42,8 @@ class LiveSafetyTests(unittest.IsolatedAsyncioTestCase):
                       (frame,FrameStamp(8,10,digest(frame)))]
             args=Namespace(challenge=challenge,out=out,provider='ollaya',model=None,autostart=True,seconds=None)
             with patch('playjev.live.EmulatorSession',return_value=session),patch('playjev.challenge.asset_digest',return_value='assets'),\
+                 patch('playjev.live.probe_control',new=AsyncMock(return_value={'verified':True})),\
+                 patch('playjev.startup.check',new=AsyncMock(return_value={'passed':True})),\
                  patch('playjev.live.ollaya_manifest',new=AsyncMock(return_value={'name':'kev:0.8b'})),\
                  patch('playjev.live.inference',return_value=('kev:0.8b',transport)),\
                  patch('playjev.live.native_capture',new=AsyncMock(side_effect=captures)),\
@@ -57,3 +59,6 @@ class LiveSafetyTests(unittest.IsolatedAsyncioTestCase):
             env.page.evaluate.assert_any_await('()=>{window.releaseLive();EJS_emulator.pause();}')
             events=[json.loads(line)['event'] for line in (out/'inference.jsonl').read_text().splitlines()]
             self.assertEqual(events,['started','failed'])
+            stream=[json.loads(line) for line in (out/'events.jsonl').read_text().splitlines()]
+            self.assertTrue(any(row['classification']=='judgment.failed' for row in stream))
+            self.assertFalse(summary['token_usage']['complete'])

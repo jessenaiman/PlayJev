@@ -17,8 +17,11 @@ from .transports import inference, ollaya_manifest, RecordedTransport, SafetyHol
 from .progress import endpoint, save as save_progress
 from .practice import Goal, validate as validate_practice
 from .checkpoints import capture as capture_checkpoint
-from .hud import read_score
+from .hud import read_score, LiveScore
 from .native import capture as native_capture
+from .events import EventLog, action_class
+from .usage import token_usage, player_identity
+from .participation import probe_control
 
 
 async def play(args):
@@ -46,8 +49,11 @@ async def play(args):
     write_phase(args.out,'starting')
     provider=getattr(args,'provider','ollaya')
     model,transport=inference(provider,getattr(args,'model',None))
-    transport=RecordedTransport(transport,args.out/'inference.jsonl')
+    events=EventLog(args.out/'events.jsonl',{'kind':'llm','provider':provider,'model':model})
+    transport=RecordedTransport(transport,args.out/'inference.jsonl',events)
+    (args.out/'inference.jsonl').touch()
     player=profile.player_factory(model=model,transport=transport)
+    auxiliary=getattr(player,'auxiliary_questions',True)
     if goal:player.practice_context=goal.context()
     pending=None
     records=[]
@@ -55,11 +61,17 @@ async def play(args):
     terminal_samples=0
     sample=0
     metrics=Metrics(game.id);clock=DecisionClock()
+    hud=LiveScore();score_state={}
     summary={'schema':'jev-live-v1','game':game.id,'challenge_id':metadata['challenge_id'],
              'status':'incomplete','score':None,'score_verified':False,'budget_frames':None,
                'config':{'player':'jev-gates','provider':provider,'model':model,'policy_version':profile.policy_version,'timing_gate':'bounded-cycle-v1','score_reader':'exact-templates+independent-frame-repeat-v1'},
               'playback_mode':'continuous','game_completed':False}
     summary['terminal_detection']=profile.terminal_note
+    summary['config']['auxiliary_model_questions']=auxiliary
+    summary['config']['decision_cycle']='model-choice' if auxiliary else 'code-fixed-normal-18-frames'
+    summary['participant']=player_identity(summary['config'])
+    summary['event_stream']='events.jsonl'
+    summary['participation_required']=True
     if practice:
         summary['practice']=practice
         summary['playback_mode']='continuous-practice-resumed' if practice['resume_from'] else 'continuous-practice-fresh'
@@ -67,9 +79,12 @@ async def play(args):
     if provider=='ollaya':
         summary['config']['model_manifest']=await ollaya_manifest(model)
     summary['config']['source_sha256']={name:digest((ROOT/'playjev'/name).read_bytes())
-        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py','progress.py','practice.py','checkpoints.py','native.py',profile.source)}
+        for name in ('live.py','hud.py','runtime.py','transports.py','execution.py','timing.py','spatial.py','progress.py','practice.py','checkpoints.py','native.py','events.py','usage.py','digdug_score.py','participation.py','loss_review.py','startup.py','completion.py','recipes/startup.json','recipes/completion.json',profile.source)}
+    if game.id=='crackpots':
+        summary['config']['source_sha256']['policies/crackpots.json']=digest((ROOT/'playjev/policies/crackpots.json').read_bytes())
     summary['config']['display_sha256']={name:digest((ROOT/'games/emulatorjs'/name).read_bytes())
         for name in ('index.html','live-controls.js')}
+    summary['config']['display_sha256']['atari-controller.js']=digest((ROOT/'games/arcade/atari-controller.js').read_bytes())
     async with EmulatorSession(assets,rom,True,args.out/'video',1,responsive=True) as env:
         frame=None
         try:
@@ -78,6 +93,14 @@ async def play(args):
             summary['restore_setup_callbacks']=setup
             summary['canonical_restore_verified']=True
             summary['restored_state_sha256']=expected
+            summary['participation']=await probe_control(env,snapshot,expected,args.out,game.id,
+                resumed=bool(practice and practice['resume_from']))
+            events.write('participation','session.control-verified' if summary['participation']['verified'] else 'session.unverified',proof=summary['participation'])
+            from .startup import check as startup_check
+            summary['startup_check']=await startup_check(args.out,summary,events=events)
+            if not summary['startup_check']['passed']:
+                summary['stop_reason']='unverified-player-control'
+                raise ValueError('Native input-effect/start-mode check failed; no gameplay inference or score attribution')
             # The initial observation also uses the raw core, not a window-sized
             # screenshot. Exactly one setup frame processes the screenshot command.
             initial,_=await native_capture(env,paused=True)
@@ -118,15 +141,18 @@ async def play(args):
                     (args.out/evidence).write_bytes(frame)
                     frame_log.write(json.dumps({'evidence':evidence,'before':stamp.before,'after':stamp.after,'sha256':stamp.sha256})+'\n');frame_log.flush()
                     sample+=1
+                    score_state=hud.observe(read_score(game.id,frame),stamp,evidence)
+                    events.write('native-observation','hud.supported' if score_state['score'] is not None else 'hud.unknown',
+                                 source={'before':stamp.before,'after':stamp.after,'sha256':stamp.sha256,'evidence':evidence},hud=score_state)
                     if goal and goal.observe(read_score(game.id,frame),stamp,evidence,elapsed):
                         summary['stop_reason']='practice-target-achieved'
                         break
                     await env.page.evaluate('o=>window.drawTracking(o)',{**profile.overlay(current),'capture_frame':stamp.before,'source_size':[160,210]})
-                    # Three consecutive non-black observations, never a missing
-                    # player sprite, are a stop candidate; not a verified death.
+                    # Three profile-specific terminal candidates, never just a
+                    # flickering player sprite, stop without claiming verified death.
                     terminal_samples=terminal_samples+1 if profile.terminal_candidate(current) else 0
                     if terminal_samples>=3:
-                        summary['game_over_candidate']={'game_frame':elapsed,'reason':'three-background-color-observations','verified':False}
+                        summary['game_over_candidate']={'game_frame':elapsed,'reason':profile.terminal_reason,'verified':False}
                         summary['stop_reason']='suspected-game-over'
                         break
                     if args.seconds and time.monotonic()-started>=args.seconds:
@@ -145,6 +171,7 @@ async def play(args):
                         age=elapsed-request_frame
                         rejection=envelope.reject_reason(number,args.out.name,0)
                         applied=rejection is None and not current.get('life_indicator_visible',False)
+                        await env.page.evaluate('choice=>window.lastLiveProposal=choice',decision.get('choice'))
                         choice,duration,veto=profile.prepare(current,decision)
                         if veto:
                             applied=False
@@ -157,6 +184,7 @@ async def play(args):
                         else:
                             await env.page.evaluate('window.releaseLive()')
                             execution={'applied':False,'reason':rejection or ('safety-veto' if veto else 'life-indicator')}
+                            await env.page.evaluate('reason=>window.lastLiveControlReason="rejected: "+reason',execution['reason'])
                         execution_frame=execution.get('frame',number)
                         age=execution_frame-envelope.source.before
                         record={'step':len(records),'game_frame':request_frame,'applied_at_frame':execution_frame-origin,
@@ -164,13 +192,21 @@ async def play(args):
                                  'envelope':envelope.json(),'execution':execution,
                                 'latency_s':time.monotonic()-request_started,
                                 'video_time_s':request_video,'action_video_time_s':time.monotonic()-env.started_wall}
-                        cycle=decision['response']['answers']['cycle']
-                        record['accuracy_checks']={key:decision['response']['answers'][key] for key in ('perception_check','projection_check')}
-                        decision.setdefault('components',{})['cycle']=clock.restart(elapsed,cycle)
+                        answers=decision['response']['answers']
+                        record['accuracy_checks']={key:answers[key] for key in ('perception_check','projection_check') if key in answers}
+                        if auxiliary:
+                            decision.setdefault('components',{})['cycle']=clock.restart(elapsed,answers['cycle'])
+                        else:
+                            record['cycle']=clock.restart_code(elapsed)
                         metrics.record(record)
                         records.append(record);log.write(json.dumps(record)+'\n');log.flush()
+                        events.write('control','control.'+('applied.'+action_class(game.id,choice) if applied else 'rejected.'+execution['reason']),
+                                     context=envelope.json(),record=record)
                         pending=None
-                    if pending is None and clock.due(elapsed):
+                    ready=profile.inference_ready(current)
+                    if not ready:
+                        await env.page.evaluate('window.releaseLive()')
+                    if pending is None and clock.due(elapsed) and ready:
                         envelope=DecisionEnvelope(args.out.name,len(records),stamp)
                         transport.context=envelope.json()
                         request_frame=stamp.before-origin;request_video=time.monotonic()-env.started_wall
@@ -182,7 +218,7 @@ async def play(args):
                         pending=asyncio.create_task(player.decide(state,game))
                         metrics.start_request(envelope.json(),request_started)
                     buttons=await env.page.evaluate('()=>Array.isArray(window.liveButtons)?[...window.liveButtons]:null')
-                    snapshot=metrics.snapshot(current,elapsed,pending is not None,clock,emulator_frame=number,buttons=buttons)
+                    snapshot=metrics.snapshot({**current,**score_state},elapsed,pending is not None,clock,emulator_frame=number,buttons=buttons)
                     metrics.write(args.out,snapshot)
                     await env.page.evaluate('text=>{const panel=document.getElementById("metrics");if(panel)panel.textContent=text;}',snapshot['ascii'])
                     previous,previous_frame=current,number
@@ -229,7 +265,7 @@ async def play(args):
                         (practice['base_frames']+summary['observation_setup_frames']) if practice and practice['resume_from'] else 0)
                 except Exception as exc:
                     summary['checkpoint_error']=f'{type(exc).__name__}: {exc}'
-            snapshot=metrics.snapshot(profile.observe(frame) if frame is not None else {},elapsed,False,clock,
+            snapshot=metrics.snapshot({**(profile.observe(frame) if frame is not None else {}),**score_state},elapsed,False,clock,
                                       buttons=buttons,phase=summary['status'])
             metrics.write(args.out,snapshot)
             if not env.page.is_closed():
@@ -249,11 +285,31 @@ async def play(args):
         except Exception as exc:
             summary=json.loads((args.out/'summary.json').read_text())
             summary['score_error']=f'{type(exc).__name__}: {exc}'
+            summary.update(score=None,score_verified=False,attribution_hold='Score verification failed')
             (args.out/'summary.json').write_text(json.dumps(summary,indent=2))
             write_phase(args.out,'failed',error=summary['score_error'])
-            raise
     write_phase(args.out,'failed' if summary.get('error') else 'saved',error=summary.get('error'))
+    summary=json.loads((args.out/'summary.json').read_text())
+    from .loss_review import review
+    write_phase(args.out,'reviewing')
+    try:
+        await review(args.out,events=events)
+    except Exception as exc:
+        summary=json.loads((args.out/'summary.json').read_text())
+        summary['loss_review_error']=f'{type(exc).__name__}: {exc}'
+        summary['completion_check']={'passed':False,'reason':'End evidence/review could not be validated'}
+        summary['evaluation_outcome']='failed-validation'
+        (args.out/'improvement.md').write_text('# End-of-attempt validation failure\n\nNo gameplay recommendation is accepted.\n\n1. Recheck the saved native-frame hashes and capture intervals; do not alter or delete evidence.\n2. Return this report to the parent to repair the specific lifecycle/score reader, not scan the project.\n')
+        summary['loss_review']={'status':'unavailable','document':'improvement.md','route':'parent'}
+        (args.out/'summary.json').write_text(json.dumps(summary,indent=2))
+    summary=json.loads((args.out/'summary.json').read_text())
+    summary['token_usage']=token_usage(args.out,summary)
+    (args.out/'summary.json').write_text(json.dumps(summary,indent=2))
+    events.write('saved','attempt.incomplete' if summary.get('error') else 'attempt.saved',
+                 score=summary.get('score'),token_usage=summary['token_usage'],stop_reason=summary.get('stop_reason'))
+    replay_html(args.out,summary,records)
     save_progress(args.out)
+    write_phase(args.out,'failed' if summary.get('error') or summary.get('score_error') else 'saved',error=summary.get('error') or summary.get('score_error'))
     if summary.get('error'):
         raise RuntimeError(summary['error'])
 

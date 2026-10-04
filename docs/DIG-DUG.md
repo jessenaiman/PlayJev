@@ -50,13 +50,18 @@ terrain, unseen monsters, ghosts, rocks, fire and occlusion remain coverage gaps
 
 Native palette/component estimates are bootstrap observations, not verified sprite
 roles. Local role/action calibration is insufficient to activate a discovered
-controller. Low latency alone does not establish accurate judgments; allocation
+controller. The live action path uses one compact action Choice; clocks and geometry
+checks remain in code rather than adding model questions. Low latency alone does
+not establish accurate judgments; allocation
 failures and stale replies must still stop/release safely.
 
 Paused deterministic input calibration is separate from continuous Jev gameplay.
-Effective pumping, rock/ghost coverage, bottom-right score glyphs and terminal
-detection remain uncalibrated. Scores stay unknown, never zero by default. No
-supported Dig Dug high score or completed-game claim is available.
+Effective pumping and rock/ghost coverage remain uncalibrated. The partial native
+HUD font recognizes labeled digits 0–3; unreadable/unseen glyphs stay unknown.
+Matching independent captures support observed scores, not a final/true peak score.
+Three captures without the known playfield stop safely without claiming game over;
+extra-life blocks are not a prerequisite for controlling the last life. No
+verified Dig Dug stage-clear or completed-game claim is available.
 
 Keep recordings, snapshots, exact requests and failures locally under `runs/`.
 Use [the open task list](ATARI-TASKS.md) as the single source of remaining work;

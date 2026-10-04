@@ -5,6 +5,7 @@ from pathlib import Path
 from playjev.challenge import digest
 from playjev.execution import FrameStamp
 from playjev.progress import endpoint, load, next_target, save
+from test_participation import verified_proof
 
 
 class ProgressTests(unittest.TestCase):
@@ -29,6 +30,7 @@ class ProgressTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp);data=b'evidence';(p/'final.png').write_bytes(data)
             row={'game':'crackpots','challenge_id':'same','status':'stopped','game_frames':60,'stop_reason':'user-stop',
+                 'participation':verified_proof(p),
                  'score':690,'score_verified':True,'score_review':{'evidence':'final.png','evidence_sha256':digest(data)},
                  'endpoint':endpoint('crackpots',{},FrameStamp(50,52,digest(data)),0,digest(data))}
             (p/'summary.json').write_text(json.dumps(row));save(p)

@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from PIL import Image
 from .invaders import components
-from .challenge import JevPlayer, replay_html
+from .challenge import JevPlayer
+from .digdug_score import playfield_visible
 
 
 def geometry(frame):
@@ -39,11 +40,12 @@ def geometry(frame):
             row+='.' if soil>=12 else 'T'
         terrain.append(row)
     lives=[p for p in components(brown) if p['pixels']==28 and p['box'][2]-p['box'][0]==3]
-    active=bool(player and 22<=player['box'][1] and player['box'][3]<178 and lives)
+    field=playfield_visible(im)
+    active=bool(field and player and 22<=player['box'][1] and player['box'][3]<178)
     return {'coordinates':'160x210; x right, y down','player':player,'enemies':enemies,
             'terrain':{'grid':terrain,'origin':[16,24],'cell_size':[8,8],
                        'legend':'T = low-soil candidate tunnel; . = soil. Coarse pixel estimate, not navigability proof.'},
-            'remaining_life_blocks':len(lives),'active_play_evidence':active,'facing':'unknown',
+            'remaining_life_blocks':len(lives),'playfield_visible':field,'active_play_evidence':active,'facing':'unknown',
             'score':None,'wave':None,'rocks':None,
             'role_hint':'Purple miner, peach Pooka, green Fygar are ROM palette estimates. Ghosts, fire and rocks are not calibrated. Missing/ambiguous miner stays unknown; intro/title/respawn must not trigger fire.'}
 
@@ -104,33 +106,47 @@ def overlay(current):
 
 
 class DigDugPlayer(JevPlayer):
+    # One semantic action judgment. Pixel geometry, deadlines and clocks stay in code.
+    auxiliary_questions=False
+
     async def decide(self,state,game):
         current=state['current'];options=candidates(current)
-        evidence={'game':game.id,'player':current['player'],'enemies':current['enemies'],
-                  'active_play_evidence':current['active_play_evidence'],'facing':current['facing'],
-                  'terrain':current['terrain'],'candidates':options,
-                  'uncalibrated':['rocks','ghosts','fire','score','terminal state']}
+        position=center(current['player']) if current['player'] else None
+        enemies=sorted(current['enemies'],key=lambda e:sum(abs(a-b) for a,b in zip(center(e),position)))[:3] if position else []
+        relative=[]
+        if enemies:
+            ex,ey=center(enemies[0]);px,py=position
+            if abs(ex-px)>5:relative.append('right' if ex>px else 'left')
+            if abs(ey-py)>5:relative.append('down' if ey>py else 'up')
+        evidence={'player':position,'monsters':[center(e) for e in enemies],
+                  'nearest_monster_direction':relative,
+                  'coordinates':'x right, y down','facing':current['facing'],
+                  'pump_available':[k for k,v in options.items() if v['permitted'] and 'fire' in k]}
         # Include only calculated bounded actions; noop is an explicit abstention.
-        criteria={k:v for k,v in options.items() if v['permitted']}
+        criteria={k:('Release controls' if k=='noop' else 'Pump the aligned monster' if k=='fire' else
+                     'Face '+k.split('+')[0]+' and pump the aligned monster' if '+fire' in k else 'Dig/move '+k)
+                  for k,v in options.items() if v['permitted']}
         if len(criteria)==1:
             # No inference can confer restart permission when geometry is unknown.
             criteria['wait']='Release inputs; wait for reliable active-play evidence'
         body={'model':self.model,'state':evidence,'questions':{'move':{
-            'type':'choice','instructions':'Choose the next short Dig Dug action from candidates. Avoid near_contact. Dig a route toward a monster, then face it and pump only with aligned_enemy_candidates in a candidate tunnel. Soil cannot be pumped through. Unknown rocks/ghosts are not proven safe. During intro/title/respawn or missing miner choose noop/wait; never restart a game. Practice context is a goal, not current geometry or reset authority.',
+            'type':'choice','instructions':'Which short Dig Dug action approaches a monster? Prefer an available pump when aligned; otherwise move in nearest_monster_direction. Only listed actions are allowed. Missing player: noop/wait. Never restart.',
             'criteria':criteria}}}
         response=await self.request(body)
         answer=self.validate_choice(response['answers']['move'],criteria)
         selected=answer['choice'] if answer['choice']!='wait' else 'noop'
         return {'request':body,'response':response,'choice':selected,'confidence':answer['confidence'],
                 'movement_frames':14,'rest_choice':'noop','components':{'move':answer},
-                'composition':'experimental-digdug-native-candidates-v1'}
+                'composition':'digdug-single-action-v2; code geometry/clock/deadlines'}
 
 
 async def collect(directory):
-    directory=Path(directory);summary=json.loads((directory/'summary.json').read_text())
-    summary['score_candidate']=None
-    summary['score_verified']=False;summary['score']=None
-    summary['score_note']='Dig Dug bottom-right HUD glyph layout is not calibrated. Score remains unknown; no inference called.'
-    (directory/'summary.json').write_text(json.dumps(summary,indent=2))
-    records=[json.loads(line) for line in (directory/'decisions.jsonl').read_text().splitlines()]
-    replay_html(directory,summary,records)
+    directory=Path(directory)
+    # Empty/incomplete captures cannot provide score evidence.
+    if not (directory/'final.png').exists():
+        summary=json.loads((directory/'summary.json').read_text())
+        summary.update(score=None,score_verified=False,score_note='No native HUD capture; score unknown.')
+        (directory/'summary.json').write_text(json.dumps(summary,indent=2))
+        return
+    from .hud import collect as collect_hud
+    await collect_hud(directory)

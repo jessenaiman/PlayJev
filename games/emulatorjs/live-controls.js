@@ -2,6 +2,10 @@
 window.installLiveControls = ({frame_cap=null,label=null}={}) => {
     window.liveRunning=false;window.liveStopped=false;window.liveButtons=[];
     window.livePolicyGeneration=0;
+    clearInterval(window.controllerTimer);
+    const drawController=()=>window.AtariController?.render(document.getElementById('controller'),window.liveButtons,
+        {proposed:window.lastLiveProposal,reason:window.lastLiveControlReason});
+    window.controllerTimer=setInterval(drawController,80);drawController();
     const status=document.getElementById('status');
     status.textContent=(label||'Continuous mode — one attempt.')+' Boxes are observed pixel estimates; dashed paths are predictions.';
     const start=document.createElement('button');start.textContent='Start Jev';
@@ -29,7 +33,7 @@ window.installLiveControls = ({frame_cap=null,label=null}={}) => {
     window.applyLive=({buttons,rest,frames,deadline,policy_generation})=>{
         window.releaseLive();
         const gm=EJS_emulator.gameManager,now=gm.getFrameNum();
-        const reject=reason=>({applied:false,reason,frame:now});
+        const reject=reason=>{window.lastLiveControlReason='rejected: '+reason;return {applied:false,reason,frame:now};};
         if(window.liveStopped||!window.liveRunning)return reject('stopped');
         if(policy_generation!==window.livePolicyGeneration)return reject('changed-policy');
         if(!Number.isFinite(deadline)||now>deadline)return reject('stale');
@@ -37,6 +41,7 @@ window.installLiveControls = ({frame_cap=null,label=null}={}) => {
         const permitted=new Set([0,4,5,6,7]);
         if(!Array.isArray(buttons)||!Array.isArray(rest)||[...buttons,...rest].some(b=>!permitted.has(b)))return reject('invalid-buttons');
         window.liveButtons=buttons;for(const b of buttons)gm.simulateInput(0,b,1);
+        window.lastLiveControlReason='applied';drawController();
         const end=now+frames,expiry=end+30;
         let resting=false;
         const tick=()=>{
