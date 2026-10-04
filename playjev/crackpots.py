@@ -1,10 +1,7 @@
 """Read-only Crackpots raster geometry and short-horizon interception."""
 import io
-import json
-from pathlib import Path
 from PIL import Image
 from .invaders import components
-from .challenge import JevPlayer
 
 
 def geometry(frame):
@@ -93,42 +90,3 @@ def guard(current,choice):
 def overlay(current):
     return {'player':current['player'],'aliens':current['bugs'],'projectiles':[],
             'labels':{'alien':'bug','player':'gardener'},'targets':current['pots'],'bug_tracks':current.get('bug_tracks',[])}
-
-
-class CrackpotsPlayer(JevPlayer):
-    auxiliary_questions=False
-
-    def __init__(self,*args,**kwargs):
-        super().__init__(*args,**kwargs)
-        self.last_target=None
-        self.policy=json.loads((Path(__file__).parent/'policies'/'crackpots.json').read_text())
-
-    async def decide(self,state,game):
-        current=state['current'];px,lanes=interception(current)
-        evidence={'player_x':px,'previous_target_x':self.last_target,
-                  'drop_ready':any(l['ready_to_drop'] for l in lanes),
-                  'estimates':'Code supplies bounded, estimated interception candidates; not guaranteed catches.'}
-        criteria={lane['id']:{'action':self.policy.get('lane_action','Align with this observed available pot').format(**lane),'x':lane['x'],
-                             'catchable_bugs':lane['catchable_bugs'],'arrival_frames':lane['arrival_frames'],
-                             'ready_to_drop':lane['ready_to_drop']} for lane in lanes}
-        criteria.update(hold=self.policy.get('hold_criterion','Wait for reliable gardener/bug observations'),
-                        scan=self.policy.get('scan_criterion','Move toward the central pots to prepare for a new bug'))
-        if self.policy['include_pursuit_evidence']:
-            evidence['bugs']=[{'x':b['x'],'y':b['y'],'vx':b['vx'],'vy':b['vy']} for b in current.get('bug_tracks',[])[:6]]
-            for lane in lanes:
-                criteria[lane['id']]['needed_direction']='unknown' if px is None else 'left' if lane['x']<px-3 else 'right' if lane['x']>px+3 else 'aligned'
-        body={'model':self.model,'state':evidence,'questions':{
-            'lane':{'type':'choice','instructions':self.policy['lane_instructions'], 'criteria':criteria}}}
-        response=await self.request(body)
-        gates={'lane':self.validate_choice(response['answers']['lane'],criteria)}
-        lane=next((l for l in lanes if l['id']==gates['lane']['choice']),None)
-        target=lane['x'] if lane else 80 if gates['lane']['choice']=='scan' else px
-        self.last_target=target
-        error=target-px if target is not None and px is not None else 0
-        direction='left' if error<-3 else 'right' if error>3 else ''
-        fire=bool(evidence['drop_ready'] and px is not None)
-        choice='+'.join(([direction] if direction else [])+(['fire'] if fire else [])) or 'noop'
-        duration=min(26,max(1,round(abs(error)/0.7))) if direction else 30
-        return {'request':body,'response':response,'components':gates,'choice':choice,
-                'confidence':gates['lane']['confidence'],'movement_frames':duration,'drop_authorized':fire,
-                'rest_choice':'noop','target_x':target,'composition':'crackpots-model-lane/code-fresh-interception-trigger-v3'}

@@ -16,7 +16,7 @@ visible replay. Show the outcome after every ending. Only a verified stage clear
 success; a score increase, applied controls or passing tests is not. Do not run system
 tests to classify moves or iterate policies; use them only to diagnose an actual crash.
 
-- [ ] `playjev/policies/crackpots.json`: resolve repeated `hold`/`scan` choices when
+- [ ] `playjev/recipes/crackpots-lane.json`: resolve repeated `hold`/`scan` choices when
       another pot has an estimated catch. Judge each revision by visible gameplay,
       not wording, confidence or changes in command counts alone.
 - [ ] `playjev/loss_review.py`: automatically compare the exact previous/current JSON
@@ -29,10 +29,6 @@ tests to classify moves or iterate policies; use them only to diagnose an actual
 - [ ] `playjev/crackpots.py`, `playjev/runtime.py`: establish native first-wave-clear
       evidence. Keep stage success separate from the startup/score-progress audit in
       `playjev/completion.py`; never promote `progressed` to a win.
-- [ ] `playjev/crackpots.py`, `playjev/policies/crackpots.json`: separate candidate facts
-      in state from option definitions, and make the gameplay question JSON directly
-      reusable with `ollaya run --questions`; changing a rubric must not require a
-      new Python renderer/import or a different provider schema.
 - [ ] `playjev/transports.py`: resolve unnecessary one-question CLI calls within a
       workflow against the parallel-questions cookbook using recorded local memory,
       latency and token evidence. Keep startup/gameplay/completion/review separate.
@@ -45,6 +41,51 @@ Cookbook/schema references: [function calling](https://docs.typesafe.ai/cookbook
 [confidence](https://docs.typesafe.ai/confidence.md),
 [parallel questions](https://docs.typesafe.ai/cookbooks/parallel_questions.md),
 [Ollaya compatibility](https://ollaya.dev/docs/typesafe-compatibility).
+
+## Jev documentation todo — in order
+
+Each item needs one useful gameplay refactor, a runnable local CLI example under
+`experiments/jev-gameplay/`, observed native gameplay and its own source check-in.
+The chat checklist reports active progress; this document retains unresolved work.
+Reading, typed output and a check-in do not establish improved gameplay.
+Keep perception (`crackpots.py`), state (`crackpots_state.py`), typed orchestration
+(`crackpots_player.py`), JSON recipes and execution (`crackpots_control.py`) separate.
+Show the actual ASCII architecture in chat after each implementation and maintain
+the runnable example's diagram in `experiments/jev-gameplay/README.md`.
+
+- [ ] 1. [State](https://docs.typesafe.ai/concepts/state): separate `state.pots` facts
+      from option definitions in `playjev/crackpots_state.py` and the directly runnable
+      `playjev/recipes/crackpots-lane.json`. Demonstrate pursuit of a supplied
+      catchable pot in native gameplay; example: `experiments/jev-gameplay/01-state.json`.
+- [ ] 2. [Score](https://docs.typesafe.ai/primitives/score): rate intercept quality
+      with concrete ordered levels in a gameplay recipe; preserve distributions,
+      fractional scores and legends rather than treating a rating as HUD points.
+- [ ] 3. [Noul](https://docs.typesafe.ai/primitives/noul): independently judge tactical
+      pursuit and firing opportunities; compose them outside perception while
+      retaining the code-owned fresh-frame drop guard. No duplicate model arithmetic.
+- [ ] 4. [Advanced structure](https://docs.typesafe.ai/primitives/advanced): replace
+      confused action/level descriptions with structured matching/exclusion examples
+      in recipe JSON. Demonstrate a useful changed decision, not just higher confidence.
+- [ ] 5. [Confidence](https://docs.typesafe.ai/confidence): retain competing answers
+      and uncertainty in decisions/end reports; distinguish Choice, Score and Noul
+      meanings and local-provider calibration. Never use confidence as native proof.
+- [ ] 6. [Speculative fan-out](https://docs.typesafe.ai/patterns/fan-out): batch tactical
+      alternatives over one gameplay state via CLI and consume relevant branches in
+      code. Keep startup, completion and improvement workflows entirely separate.
+- [ ] 7. [Confidence-gated routing](https://docs.typesafe.ai/patterns/confidence-routing):
+      route uncertain tactical judgments through bounded observe/review behavior,
+      preserving releases/deadlines and preventing endless waiting or hidden retries.
+- [ ] 8. [Composite scoring](https://docs.typesafe.ai/patterns/composite-scoring):
+      combine separately described tactical dimensions with transparent JSON-owned
+      weights in code; compare a weight change using real replay without re-asking
+      unchanged judgments. Safety vetoes remain non-compensating.
+- [ ] 9. [Intent routing](https://docs.typesafe.ai/patterns/intent-routing): route
+      pursuit, alignment, firing and observation through explicit tactical modes
+      outside perception; lifecycle repair is not a gameplay-action branch.
+- [ ] 10. [Self-consistency: Nouls](https://docs.typesafe.ai/cookbooks/consistency_noul_cookbook):
+      flag contradictory/unstable tactical probabilities over comparable evidence
+      in the end report; retain original values and route unresolved cases to the
+      parent. Do not equate agreement with correctness or spend on hidden repeats.
 
 ## Gameplay milestones — in order
 

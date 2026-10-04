@@ -23,7 +23,7 @@ def summary(root,score=30):
     return {'game':'crackpots','status':'stopped','game_frames':100,'challenge_id':'same','stop_reason':'suspected-game-over',
             'participation':verified_proof(root),'startup_check':{'passed':True},'participation_required':True,
             'score':score,'score_verified':True,'score_review':{'evidence':'final.png','evidence_sha256':digest(data)},
-            'config':{'provider':'ollaya','model':'kev:0.8b','source_sha256':{'policies/crackpots.json':digest((ROOT/'playjev/policies/crackpots.json').read_bytes())}}}
+            'config':{'provider':'ollaya','model':'kev:0.8b','source_sha256':{'recipes/crackpots-lane.json':digest((ROOT/'playjev/recipes/crackpots-lane.json').read_bytes())}}}
 
 
 def frames(root,samples):
@@ -52,7 +52,7 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
                 report=await review(root)
                 self.assertTrue(report['completion_check']['passed'])
                 self.assertEqual(report['handoff']['route'],'classification-worker')
-                self.assertEqual(report['handoff']['allowed_edit'],['playjev/policies/crackpots.json'])
+                self.assertEqual(report['handoff']['allowed_edit'],['playjev/recipes/crackpots-lane.json'])
                 self.assertEqual(set(seen[0]['questions']),{'session'})
                 self.assertEqual(set(seen[1]['questions']),{'session'})
                 self.assertEqual(set(seen[2]['questions']),{'behavior','alternative','expected','fix'})

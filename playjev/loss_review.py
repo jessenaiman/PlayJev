@@ -10,13 +10,6 @@ from .participation import score_attributable
 from .transports import inference, RecordedTransport, safety_report
 
 
-POLICY='playjev/policies/crackpots.json'
-PURSUIT_INSTRUCTIONS=('Choose a catchable pot by the bug positions and needed_direction, not its pot_N label. '
-    'Move left or right to follow the intercept as bugs shift. Prefer ready_to_drop, then short arrival_frames. '
-    'Do not keep the previous target when it has zero catchable_bugs. If none are catchable, scan centrally or hold. '
-    'Code handles bounded movement and fresh aligned drops; never restart.')
-
-
 def fixes(game,root=ROOT):
     """Closed, parent-owned edit sites; the model cannot invent paths or commands."""
     source={'crackpots':'crackpots.py','dig-dug':'digdug.py','space-invaders':'invaders.py'}[game]
@@ -27,17 +20,16 @@ def fixes(game,root=ROOT):
         'perception':{'kind':'refactor','file':'playjev/'+source,'symbol':'geometry',
                      'change':'Correct the specific player/target estimates contradicted by the supplied frames; retain unknown cases.',
                      'test':'.venv/bin/python -m unittest discover -s tests -p test_'+source},
-        'execution':{'kind':'refactor','file':'playjev/runtime.py','symbol':{'crackpots':'crackpots_prepare','dig-dug':'registry','space-invaders':'invaders_prepare'}[game],
+        'execution':{'kind':'refactor','file':'playjev/crackpots_control.py' if game=='crackpots' else 'playjev/runtime.py',
+                     'symbol':{'crackpots':'prepare','dig-dug':'registry','space-invaders':'invaders_prepare'}[game],
                      'change':'Inspect stale/veto and applied-input evidence at this prepare hook; preserve deadlines and release rules.',
                      'test':'.venv/bin/python -m unittest discover -s tests -p test_execution.py'},
     }
     if game=='crackpots':
-        path=Path(root)/POLICY;before=json.loads(path.read_text())
-        result['pursuit_values']={'kind':'classification-values','file':POLICY,
-            'change':'Set include_pursuit_evidence=true and replace lane_instructions with the supplied bug-following rubric.',
-            'source_sha256':digest(path.read_bytes()),
-            'operations':[{'op':'replace','key':key,'before':before[key],'value':value}
-                          for key,value in {'include_pursuit_evidence':True,'lane_instructions':PURSUIT_INSTRUCTIONS}.items()],
+        recipe=Path(root)/'playjev/recipes/crackpots-lane.json'
+        result['pursuit_values']={'kind':'classification-values','file':'playjev/recipes/crackpots-lane.json',
+            'change':'Revise lane.instructions or lane.criteria at this exact question file using the supplied missed-intercept evidence; do not replay a failed rubric.',
+            'source_sha256':digest(recipe.read_bytes()),
             'test':'.venv/bin/python -m unittest discover -s tests -p test_crackpots.py'}
     result['unknown']={'kind':'evidence-needed','file':None,'change':'Label the supplied uncertain frames before proposing code edits.','test':None}
     return result
@@ -70,7 +62,8 @@ def packet(directory,summary):
                 for key,value in decision.get('components',{}).items():
                     if key in ('lane','action','movement','target'):all_labels[str(value.get('choice'))]+=1
                 if game=='crackpots' and choice=='noop' and opportunity is None:
-                    request=decision.get('request',{});criteria=request.get('questions',{}).get('lane',{}).get('criteria',{})
+                    request=decision.get('request',{});criteria=request.get('state',{}).get('pots')
+                    if criteria is None:criteria=request.get('questions',{}).get('lane',{}).get('criteria',{})
                     px=request.get('state',{}).get('player_x');label=decision.get('components',{}).get('lane',{}).get('choice')
                     selected=criteria.get(label);catchable=[(key,value) for key,value in criteria.items() if isinstance(value,dict) and value.get('catchable_bugs',0)>0]
                     ignored=(isinstance(selected,dict) and selected.get('catchable_bugs')==0) or label in ('hold','scan')
@@ -171,7 +164,7 @@ def handoff(state,answers,catalog,summary):
     chosen=answers['fix']['choice'];item=catalog[chosen];route='parent';reasons=[]
     if not state['checks']['started']:chosen='lifecycle';item=catalog[chosen];reasons.append('Player-control/start attribution failed; do not patch a direction rubric from demo movement')
     if chosen=='pursuit_values':
-        recorded=summary.get('config',{}).get('source_sha256',{}).get('policies/crackpots.json')
+        recorded=summary.get('config',{}).get('source_sha256',{}).get('recipes/crackpots-lane.json')
         ready=(state['checks']['started'] and state.get('missed_opportunity') is not None and recorded==item['source_sha256'] and
                answers['behavior']['choice'] in ('stationary','not_following','repetition') and
                answers['fix']['confidence']>=0.5 and answers['behavior']['confidence']>=0.5)

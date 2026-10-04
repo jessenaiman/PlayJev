@@ -1,0 +1,16 @@
+{
+  "lane": {
+    "type": "choice",
+    "instructions": "Choose a pursuit target from `pots`. A pot with positive catchable_bugs has an estimated interception opportunity; a pot with zero has none. Do not stay at a zero-catch pot when another pot has an estimated catch. Move toward an opportunity even before ready_to_drop. Choose hold only when `bugs` is empty, or scan when visible bugs have no estimated catch. These estimates are uncertain; code verifies fresh alignment before dropping.",
+    "criteria": {
+      "pot_0": "Pursue the available pot identified by pot_0 in state.pots.",
+      "pot_1": "Pursue the available pot identified by pot_1 in state.pots.",
+      "pot_2": "Pursue the available pot identified by pot_2 in state.pots.",
+      "pot_3": "Pursue the available pot identified by pot_3 in state.pots.",
+      "pot_4": "Pursue the available pot identified by pot_4 in state.pots.",
+      "pot_5": "Pursue the available pot identified by pot_5 in state.pots.",
+      "hold": "Wait for the next bug when none is visible.",
+      "scan": "Reposition centrally when visible bugs have no predicted catch."
+    }
+  }
+}

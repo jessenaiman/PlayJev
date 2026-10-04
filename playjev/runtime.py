@@ -4,6 +4,7 @@ from typing import Callable
 from .challenge import GatedJevPlayer
 from .hud import collect
 from .invaders import geometry, motion
+from .crackpots_control import prepare as crackpots_prepare
 
 
 def invaders_track(previous,current,frames):
@@ -47,32 +48,16 @@ def crackpots_track(previous,current,frames):
     current['bug_tracks']=tracks(previous,current,frames)
 
 
-def crackpots_prepare(current,decision):
-    from .crackpots import guard, interception
-    choice=decision['choice'];duration=decision.get('movement_frames',30)
-    if current['player'] and decision.get('target_x') is not None:
-        px=(current['player']['box'][0]+current['player']['box'][2])/2
-        error=decision['target_x']-px
-        direction='left' if error<-3 else 'right' if error>3 else ''
-        # An old fire judgment is not enough: the current frame must still
-        # contain an aligned pot with a predicted interception opportunity.
-        _,lanes=interception(current)
-        trigger=decision.get('drop_authorized',decision.get('components',{}).get('drop',{}).get('choice')=='fire')
-        fire=trigger and any(l['ready_to_drop'] for l in lanes)
-        choice='+'.join(([direction] if direction else [])+(['fire'] if fire else [])) or 'noop'
-        duration=min(26,max(1,round(abs(error)/0.7))) if direction else 30
-    return choice,duration,bool(guard(current,choice))
-
-
 def registry():
-    from .crackpots import geometry as crackpots_geometry, overlay, CrackpotsPlayer
+    from .crackpots import geometry as crackpots_geometry, overlay
+    from .crackpots_player import CrackpotsPlayer
     from .crackpots_score import collect as crackpots_collect
     from . import digdug
     return {
         'space-invaders':LiveGame('space-invaders','continuous-compact-v1',geometry,invaders_track,
             lambda current:current,invaders_prepare,lambda current:not current['background_black'],
             GatedJevPlayer,collect,'invaders.py','background-color candidate; not verified game over'),
-        'crackpots':LiveGame('crackpots','crackpots-relative-lane-code-trigger-v4',crackpots_geometry,crackpots_track,
+        'crackpots':LiveGame('crackpots','crackpots-state-lane-code-trigger-v5',crackpots_geometry,crackpots_track,
             overlay,crackpots_prepare,lambda current:current.get('final_building_loss_candidate',False),CrackpotsPlayer,crackpots_collect,
             'crackpots.py','six-layer native roof-loss candidate; not verified game over',
             'three-native-captures-at-final-building-loss',

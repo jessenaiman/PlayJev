@@ -3,7 +3,8 @@ import io
 import unittest
 from unittest.mock import AsyncMock
 from PIL import Image
-from playjev.crackpots import geometry, tracks, interception, guard, CrackpotsPlayer
+from playjev.crackpots import geometry, tracks, interception, guard
+from playjev.crackpots_player import CrackpotsPlayer
 from playjev.challenge import GAMES
 from playjev.crackpots_score import FONT, digit_grids
 from playjev.hud import assemble, request_for
@@ -61,7 +62,8 @@ class CrackpotsTests(unittest.TestCase):
         p.request=AsyncMock(return_value={'answers':{'lane':answer('pot_1')}})
         result=asyncio.run(p.decide({'current':current},GAMES['crackpots']))
         request=p.request.call_args.args[0]
-        self.assertEqual(request['questions']['lane']['criteria']['pot_1']['needed_direction'],'right')
+        self.assertEqual(request['state']['pots']['pot_1']['needed_direction'],'right')
+        self.assertIsInstance(request['questions']['lane']['criteria']['pot_1'],str)
         self.assertEqual(result['choice'],'right');self.assertEqual(set(request['questions']),{'lane'})
 
     def test_activision_hud_and_six_digit_assembly(self):

@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from playwright.async_api import async_playwright
 from playjev.execution import FrameStamp, DecisionEnvelope
-from playjev.runtime import crackpots_prepare
+from playjev.crackpots_control import prepare as crackpots_prepare
 
 
 class ExecutionTests(unittest.TestCase):

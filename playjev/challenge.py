@@ -553,7 +553,7 @@ async def run(args, player=None):
         raise ValueError("TYPESAFE_API_KEY is required")
     question = args.question.read_text() if args.question else None
     if args.player=='jev-gates' and game.id=='crackpots':
-        from .crackpots import CrackpotsPlayer
+        from .crackpots_player import CrackpotsPlayer
         player=player or CrackpotsPlayer(question,args.model)
     player = player or (OllayaGatedPlayer(question,args.model) if args.player == "ollaya-gates" else
                         DefenderJevPlayer(question,args.model) if args.player == "jev-gates" and game.id == "defender" else

@@ -1,0 +1,15 @@
+{
+  "player_x": 33,
+  "previous_target_x": 33,
+  "drop_ready": false,
+  "bugs": [{"x": 71.5, "y": 138.5, "vx": 0, "vy": -0.545}],
+  "pots": {
+    "pot_0": {"x": 39, "catchable_bugs": 0, "arrival_frames": 8.6, "ready_to_drop": false, "needed_direction": "right"},
+    "pot_1": {"x": 55, "catchable_bugs": 0, "arrival_frames": 31.4, "ready_to_drop": false, "needed_direction": "right"},
+    "pot_2": {"x": 71, "catchable_bugs": 1, "arrival_frames": 54.3, "ready_to_drop": false, "needed_direction": "right"},
+    "pot_3": {"x": 87, "catchable_bugs": 0, "arrival_frames": 77.1, "ready_to_drop": false, "needed_direction": "right"},
+    "pot_4": {"x": 103, "catchable_bugs": 0, "arrival_frames": 100, "ready_to_drop": false, "needed_direction": "right"},
+    "pot_5": {"x": 119, "catchable_bugs": 0, "arrival_frames": 122.9, "ready_to_drop": false, "needed_direction": "right"}
+  },
+  "scope": "Illustrative tactical state, not a recording or proof of a stage clear. Code estimates catches and enforces fresh input deadlines."
+}
